@@ -151,10 +151,10 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="rayTracer.cu" />
+    <ClInclude Include="cutil_math.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="cutil_math.h" />
+    <CudaCompile Include="rayTracerNoGL.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
