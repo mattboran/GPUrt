@@ -4,11 +4,17 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
+
 #define M_PI 3.14159265359f
 #define EPSILON 0.00001f
 #define XRES 320
 #define YRES 240
 #define SAMPLES 128
+
+//3 types of materials used in the radiance() function. 
+enum Refl_t { DIFF, SPEC, REFR };
+//3 types of geometry to be treated during radiance function. This causes big fork
+enum Geom_t { SPH, TRI, BOX };
 
 //This is the core of the program, hence ray-tracer
 struct Ray{
@@ -17,21 +23,8 @@ struct Ray{
 	//construct on gpu
 	__device__ Ray(float3 o, float3 d) : origin(o), dir(d) { }
 };
-/*
-struct Camera{
-float3 lower_left;
-float3 offset;
-float3
-};*/
 
-//3 types of materials used in the radiance() function. 
-enum Refl_t { DIFF, SPEC, REFR };
-//3 types of geometry to be treated during radiance function. This causes big fork
-enum Geom_t { SPH, TRI, BOX };
-
-//Sphere - primitive object defined by radius and center.
-//All primitives also have emmission (light, a vector) and color (another vector)
-struct __declspec(align(64)) Sphere{
+struct __declspec(align(16)) Sphere{
 	float rad;
 	float3 cent, emit, col; //center, emission, color
 	Refl_t refl; //material type
@@ -109,11 +102,24 @@ struct Triangle{
 	}
 };
 
+/*
+struct Camera{
+float3 lower_left;
+float3 offset;
+float3
+};*/
+
+
+
+//Sphere - primitive object defined by radius and center.
+//All primitives also have emmission (light, a vector) and color (another vector)
+
+
 Sphere *dev_sphere_ptr;
 float *dev_tri_ptr;
 
 //These numbers come directly from smallPT
-//had to scale everything down by a factor of 10 to reduce artifacts.
+//had to scale everything down by a factor of 10 to reduce artifacts. Why, though? 
 Sphere spheres[] = {
 	{ 1e4f, { 1e4f + .10f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { 0.75f, 0.25f, 0.25f }, DIFF }, //Left 
 	{ 1e4f, { -1e4f + 9.90f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .25f, .25f, .75f }, DIFF }, //Rght 
@@ -126,6 +132,12 @@ Sphere spheres[] = {
 	{ 60.0f, { 5.00f, 68.16f - .05f, 8.16f }, { 2.0f, 1.8f, 1.6f }, { 0.0f, 0.0f, 0.0f }, DIFF }  // Light
 };
 
+//adding first triangle
+//fingers crossed; making modifications to the render kernel as necessary (the intersectScene method, specifically)
+Triangle tris[] = {
+	{ { 5.0f, 1.0f, 5.0f }, { 5.0f, 2.0f, 5.0f }, { 6.0f, 1.0f, 5.0f }, { 2.f, 2.f, 2.f }, { 1.f, 1.f, 1.f }, DIFF } //diffuse light test triangle
+};
+
 void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 
 	size_t numspheres = numberofspheres * sizeof(Sphere);
@@ -133,6 +145,12 @@ void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 	cudaMemcpy(dev_sphere_ptr, &sph_list[0], numspheres, cudaMemcpyHostToDevice);
 	printf("%d numspheres\n", numspheres);
 
+}
+
+void loadSpheresToManagedMemory(Sphere *sph_list, int numberofspheres){
+	size_t numspheres = numberofspheres * sizeof(Sphere);
+	cudaMallocManaged(&dev_sphere_ptr, numspheres);
+	cudaMemcpy(dev_sphere_ptr, &sph_list[0], numspheres, cudaMemcpyHostToDevice);
 }
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
@@ -344,7 +362,7 @@ int main()
 	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
 
 	//load spheres to memory
-	loadSpheresToMemory(spheres, 9);
+	loadSpheresToManagedMemory(spheres, 9);
 
 	//dim3 block and grid are CUDA specific for scheduling CUDA threads of stream processors
 	dim3 block(16, 16, 1); //256 threads per block
@@ -367,6 +385,7 @@ int main()
 	cudaFree(out_dvc);
 	//end timer
 	cudaEventRecord(stop);
+	cudaDeviceSynchronize();
 	//double elapsed_time = double(end_time - start_time) / CLOCKS_PER_SEC;
 	printf("Finsihed rendering!\n");
 	cudaEventSynchronize(stop);
