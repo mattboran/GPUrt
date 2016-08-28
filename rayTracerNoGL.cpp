@@ -16,6 +16,8 @@
 //forward declarations
 extern void renderKernelWrapper(float3 *out_host);
 struct Sphere;
+struct Ray;
+struct Triangle;
 
 
 
@@ -39,6 +41,32 @@ inline float clampf(float x){
 //this function converts a float on [0.f, 1.f] to int on [0, 255], gamma-corrected by sqrt 2.2 (standard)
 inline int toInt(float x){
 	return int(pow(clampf(x), 1 / 2.2) * 255 + .5);
+}
+
+inline bool TESTintersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris){
+	//float n = sizeof(spheres) / sizeof(Sphere); //get number of spheres by memory size
+	//float numspheres = sizeof(sphere_list) / sizeof(Sphere);
+	//numspheres = 9;
+	float tprime;
+	float inf = 1e15f;
+	t = inf; //initialize t to infinite distance
+	for (int i = 0; i < numspheres; i++){//cycle through all spheres, until i<0
+		if ((tprime = sphere_list[i].intersectSphere(r)) && tprime < t){//new intersection is closer than previous closest
+			t = tprime;
+			id = i; //store hit sphere by ID (array index)
+		}
+	}
+	//0 through 8 for ID represent spheres 1 through 9
+	//the next ID's correspond to triangles
+	tprime = 0;
+	for (int i = numspheres; i < numspheres + numtris; i++){
+		if ((tprime = tri_list[i - numspheres].intersectTri(r)) && tprime < t){
+			t = tprime;
+			id = i;
+		}
+	}
+	//if hit occured, t is > 0 and < inf.
+	return t < inf;
 }
 
 

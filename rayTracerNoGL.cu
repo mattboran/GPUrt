@@ -26,6 +26,7 @@ struct Ray{
 	float3 dir;
 	//construct on gpu
 	__device__ Ray(float3 o, float3 d) : origin(o), dir(d) { }
+	__host__ Ray(float3 o, float3 d) : origin(o), dir(d) {}
 };
 
 
@@ -70,8 +71,8 @@ struct Triangle{
 	float3 emit, col;
 	Refl_t refl;
 	//const Geom_t geomtype;
-	//__device__ Triangle(float3 x, float3 y, float3 z, float3 e, float3 c, Refl_t r) :
-	//	v1(x), v2(y), v3(z), emit(e), col(c), refl(r) {}
+	__host__ Triangle(float3 x, float3 y, float3 z, float3 e, float3 c, Refl_t r) :
+		v1(x), v2(y), v3(z), emit(e), col(c), refl(r) {}
 
 
 	//Moller-Trumbore ray-triangle intersection.
@@ -167,10 +168,11 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	}
 	//0 through 8 for ID represent spheres 1 through 9
 	//the next ID's correspond to triangles
+	tprime = 0;
 	for (int i = numspheres; i < numspheres+numtris; i++){
-		if ((tprime = tri_list[i].intersectTri(r)) && tprime < t){
+		if ((tprime = tri_list[i-numspheres].intersectTri(r)) && tprime < t){
 			t = tprime;
-			id = i ;
+			id = i;
 		}
 	}
 	//if hit occured, t is > 0 and < inf.
