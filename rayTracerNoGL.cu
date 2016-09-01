@@ -1,6 +1,8 @@
 
 #include <iostream>
 #include "cutil_math.h"
+#include <device_launch_parameters.h>
+#include <device_functions.h>
 #include <curand.h>
 #include <curand_kernel.h>
 
@@ -73,7 +75,7 @@ struct Triangle{
 	//__device__ Triangle(float3 x, float3 y, float3 z, float3 e, float3 c, Refl_t r) :
 	//	v1(x), v2(y), v3(z), emit(e), col(c), refl(r) {}
 
-
+	
 	//Moller-Trumbore ray-triangle intersection.
 	//consider storing triangles as 1 vertex and 2 edges for faster compute
 	__device__ float intersectTri(const Ray& r) const{
@@ -132,9 +134,17 @@ Sphere spheres[] = {
 	{ 60.0f, { 5.00f, 68.16f - .05f, 8.16f }, { 2.0f, 1.8f, 1.6f }, { 0.0f, 0.0f, 0.0f }, DIFF }  // Light
 };
 
+Sphere spheres2[] = {
+	{ 1.f, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, DIFF }
+};
+
 Triangle tris[] = {
 	{ make_float3(2.7f, 3.3f, 4.7f), make_float3(2.7f, 4.95f, 4.7f), make_float3( 7.3f, 3.3f, 7.8f ), make_float3(1.f, 0.f, 0.f ), make_float3( 1.f, 0.f, 0.f), DIFF } 
 	//{ { 5.f, 1.f, 5.f }, { 5.f, 2.f, 5.f }, { 6.f, 1.f, 5.f }, { 1.f, 0.f, 0.f }, { 1.f, 0.f, 0.f }, DIFF }
+};
+
+Triangle test_triangle[] = {
+	{ make_float3(-2, 0, 0), make_float3(0, 2, 0), make_float3(2, 0, 0), make_float3(0,0,0), make_float3(1,0,0), DIFF }
 };
 
 //this function loads the spheres defined above into DRAM
@@ -147,8 +157,8 @@ void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 //this function loads the triangles defined above into DRAM
 void loadTrisToMemory(Triangle *tri_list, int numberoftris){
 	size_t numtris = numberoftris * sizeof(Triangle);
-	cudaMalloc((void **)&dev_tri_ptr, numtris);
-	cudaMemcpy(dev_tri_ptr, &tri_list[0], numtris, cudaMemcpyHostToDevice);
+	cudaMalloc((void **)&dev_tri_ptr, 64);
+	cudaMemcpy(dev_tri_ptr, &tri_list[0], 64, cudaMemcpyHostToDevice);
 }
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
@@ -177,6 +187,19 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	return t < inf;
 }
 
+//this method was used to test the use of triangles when first implemented
+__device__ bool testIntersect(const Ray &r, Triangle* tri_list, int numtris, Sphere* spr_list, int numspheres){
+//	float tprime;
+	//float inf = 1e15f;
+	////float t = inf;
+	//for (int i = 0; i < numtris; i++){
+	//	if (tri_list[i].intersectTri(r) > 0.0f)
+	//		return true;
+	//}
+	if (spr_list[0].intersectSphere(r) > 0.f)
+		return true;
+	return false;
+}
 
 
 //This function returns the largest value of x y and z from a float3
@@ -375,6 +398,46 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 	out[i] = make_float3(clamp(col.x, 0.f, 1.f), clamp(col.y, 0.f, 1.f), clamp(col.z, 0.f, 1.f));
 }
 
+//this kernel is separate and only performs a few tests. this is to make sur ethat the the triangles are
+//successfully loaded and that the intersection works properly.
+__global__ void test_kernel(float* out, Triangle *tri_list, int numtris, Sphere *spr_list, int numspheres){
+	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+	unsigned int i = (100 - y - 1) * 100 + x;
+
+	//int* test_out_dvc;
+//	Triangle* tri = new Triangle[1];
+//	tri[0] = Triangle(make_float3(-2, 0, 0), make_float3(0, 2, 0), make_float3(2, 0, 0), make_float3(1, 0, 0), make_float3(1, 0, 0), DIFF);
+	
+	
+	float3 target = make_float3(-2 + x / 50, 0 + y / 50, -5);
+	float3 orig = make_float3(0, 0, 5);
+	Ray cam(orig, make_float3(0,0,1));
+
+	if (testIntersect(cam, tri_list, 1, spr_list, 1)){
+		out[i] = 1.f;
+	}
+	else{
+		out[i] = 0.f;
+	}
+	//out[i] = sizeof(Triangle);
+
+}
+
+void testKernelWrapper(float* out_host){
+	float* out_dvc;
+	cudaMalloc(&out_dvc, 100 * 100 * sizeof(float));
+	loadSpheresToMemory(spheres2, 1);
+	loadTrisToMemory(test_triangle, 1);
+	dim3 block(8, 8, 1);
+	dim3 grid(100 / block.x, 100 / block.y, 1);
+	test_kernel <<< grid, block >> > (out_dvc, dev_tri_ptr, 1, dev_sphere_ptr, 1);
+
+	cudaMemcpy(out_host, out_dvc, 100 * 100 * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaFree(out_dvc);
+
+	cudaDeviceSynchronize();
+}
 //this wrapper function is used when the cpp main file calls the render kernel
 void renderKernelWrapper(float3* out_host){
 	//float3* out_host = new float3[XRES * YRES];

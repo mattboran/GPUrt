@@ -1,5 +1,7 @@
 #include <iostream>
 #include "cutil_math.h"
+#include <device_launch_parameters.h>
+#include <device_functions.h>
 #include <curand.h>
 #include <curand_kernel.h>
 
@@ -15,6 +17,7 @@
 
 //forward declarations
 extern void renderKernelWrapper(float3 *out_host);
+extern void testKernelWrapper(float *out_host);
 struct Sphere;
 
 
@@ -44,41 +47,62 @@ inline int toInt(float x){
 
 int main()
 {
-	printf("CUDA initialized. \nRender for %d samples started...\n", SAMPLES);
+	bool debug = true;
+	if (debug){
+		printf("Debug mode. Trying test triangle\n");
 
-	cudaEvent_t start, stop;
-	float time_elapsed;
-	cudaEventCreate(&start);
-	cudaEventCreate(&stop);
+		float* out_host = new float[100 * 100];
 
-	//start timer
-	cudaEventRecord(start);
-	//schedule GPU threads and launch kernel from host CPU
-	float3* out_host = new float3[XRES*YRES];
-
-	renderKernelWrapper(out_host);
-
-	cudaEventRecord(stop);
-	cudaDeviceSynchronize();
-	
-	printf("Finsihed rendering!\n");
-	cudaEventSynchronize(stop);
-	cudaEventElapsedTime(&time_elapsed, start, stop);
-	printf("Render took %.4f seconds\n", time_elapsed / 1000.f);
-
-	FILE *img = fopen("render.ppm", "w");
-	fprintf(img, "P3\n%d %d\n %d\n", XRES, YRES, 255);
-
-	//loop over pixels, write RGB values
-	for (int i = 0; i < XRES * YRES; i++){
-		fprintf(img, "%d %d %d\n", toInt(out_host[i].x),
-			toInt(out_host[i].y),
-			toInt(out_host[i].z));
+		testKernelWrapper(out_host);
+		printf("done\n");
+		FILE *img = fopen("test.txt", "w");
+		for (int i = 0; i < 100 * 100; i++){
+			fprintf(img, "%.0f", out_host[i]);
+			if (i % 100 == 0){
+				fprintf(img, "\n");
+			}
+		}
+		delete[] out_host;
+		return 0;
 	}
+	if (!debug)
+	{
+		printf("CUDA initialized. \nRender for %d samples started...\n", SAMPLES);
 
-	printf("Saved render image to 'render.ppm'\n");
+		cudaEvent_t start, stop;
+		float time_elapsed;
+		cudaEventCreate(&start);
+		cudaEventCreate(&stop);
 
-	//release host memory
-	delete[] out_host;
+		//start timer
+		cudaEventRecord(start);
+		//schedule GPU threads and launch kernel from host CPU
+		float3* out_host = new float3[XRES*YRES];
+
+		renderKernelWrapper(out_host);
+
+		cudaEventRecord(stop);
+		cudaDeviceSynchronize();
+
+		printf("Finsihed rendering!\n");
+		cudaEventSynchronize(stop);
+		cudaEventElapsedTime(&time_elapsed, start, stop);
+		printf("Render took %.4f seconds\n", time_elapsed / 1000.f);
+
+		FILE *img = fopen("render.ppm", "w");
+		fprintf(img, "P3\n%d %d\n %d\n", XRES, YRES, 255);
+
+		//loop over pixels, write RGB values
+		for (int i = 0; i < XRES * YRES; i++){
+			fprintf(img, "%d %d %d\n", toInt(out_host[i].x),
+				toInt(out_host[i].y),
+				toInt(out_host[i].z));
+		}
+
+		printf("Saved render image to 'render.ppm'\n");
+
+		//release host memory
+		delete[] out_host;
+	}
 	return 0;
 }
