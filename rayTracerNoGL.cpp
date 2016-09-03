@@ -47,7 +47,7 @@ inline int toInt(float x){
 
 int main()
 {
-	bool debug = true;
+	bool debug = false;
 	if (debug){
 		printf("Debug mode. Trying test triangle\n");
 

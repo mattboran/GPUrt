@@ -11,7 +11,7 @@
 #define XRES 320
 #define YRES 240
 
-#define SAMPLES 32
+#define SAMPLES 96
 
 //forward declarations
 uint hash(uint seed);
@@ -30,7 +30,35 @@ struct Ray{
 	__device__ Ray(float3 o, float3 d) : origin(o), dir(d) { }
 };
 
+//This is a model of the camera that is used to generate rays through the viewing plane. We use the left-hand-pointing
+//model of a camera with defined origin, target direction (normalized), up (normalized), and right (normalized)
+//given these vectors and a width and height for the screen (in pixels), we can generate rays through the view plane
+//and turn the camera easily.
+struct Camera{
+	float3 camera_position;
+	float3 camera_direction;
+	float3 camera_up;
+	float3 camera_right;
+	//Camera should be constructed on device
+	__device__ Camera(float3 pos, float3 target, float3 up) :
+		camera_position(pos), camera_direction(normalize(target - pos)), camera_up(normalize(up)), camera_right(normalize(up)){
+		camera_right = cross(camera_direction, camera_up);
+	}
+	__device__ Camera(float3 pos, float3 dir, float3 up, float3 right) :
+		camera_position(pos), camera_direction(dir), camera_up(up), camera_right(right) {}
 
+	//This method returns a Ray object generated from i and j coordinates (0 through XRES and 0 through YRES)
+	__device__ inline Ray computeCameraRay(int i, int j, curandState *randstate){
+		float normalized_i = (i / (float)XRES) - 0.5f +curand_uniform(randstate)*0.01f;
+		float normalized_j = (j / (float)YRES) - 0.5f +curand_uniform(randstate)*0.01f;
+		float3 image_point = normalized_i * camera_right + 
+			normalized_j * camera_up + 
+			camera_position + camera_direction;
+		float3 ray_direction = image_point - camera_position;
+		return Ray(camera_position, normalize(ray_direction));
+
+	}
+};
 
 
 //Sphere - primitive object defined by radius and center.
@@ -102,7 +130,7 @@ struct Triangle{
 		//v parameter, test bound
 		Q = cross(T, edge1);
 		v = dot(r.dir, Q) * inv_det;
-		if (v < 0.f || v > 0.f)
+		if (v < 0.f || u + v > 1.f)
 			return 0.0f;
 		t = dot(edge2, Q) * inv_det;
 
@@ -111,6 +139,13 @@ struct Triangle{
 		}
 
 		return 0.f;
+	}
+
+	//return the face normal of the triangle. Interpolate (later in the project)
+	__device__ float3 get_Normal(const float3& hitpt){
+		float3 edge1 = v2 - v1;
+		float3 edge2 = v3 - v1;
+		return cross(edge1, edge2);
 	}
 };
 
@@ -126,7 +161,7 @@ Sphere spheres[] = {
 	{ 1e4f, { 1e4f + .10f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { 0.75f, 0.25f, 0.25f }, DIFF }, //Left 
 	{ 1e4f, { -1e4f + 9.90f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .25f, .25f, .75f }, DIFF }, //Right 
 	{ 1e4f, { 5.00f, 4.08f, 1e4f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Back 
-	{ 1e4f, { 5.00f, 4.08f, -1e4f + 60.00f }, { 0.0f, 0.0f, 0.0f }, { 1.00f, 1.00f, 1.00f }, DIFF }, //Front 
+	{ 1e3f, { 5.00f, 4.08f, -1e4f + 60.00f }, { 0.0f, 0.0f, 0.0f }, { 1.00f, 1.00f, 1.00f }, DIFF }, //Front 
 	{ 1e4f, { 5.00f, 1e4f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Bottom 
 	{ 1e4f, { 5.00f, -1e4f + 8.16f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Top 
 	{ 1.65f, { 2.70f, 1.65f, 4.70f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, SPEC }, // small sphere 1
@@ -135,11 +170,11 @@ Sphere spheres[] = {
 };
 
 Sphere spheres2[] = {
-	{ 1.f, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, DIFF }
+	{ 2.f, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, DIFF }
 };
 
 Triangle tris[] = {
-	{ make_float3(2.7f, 3.3f, 4.7f), make_float3(2.7f, 4.95f, 4.7f), make_float3( 7.3f, 3.3f, 7.8f ), make_float3(1.f, 0.f, 0.f ), make_float3( 1.f, 0.f, 0.f), DIFF } 
+	{ make_float3(2.7f, 3.3f, 4.7f), make_float3(4.5f, 4.95f, 4.7f), make_float3( 7.3f, 3.3f, 7.8f ), make_float3(0.f, 0.f, 0.f ), make_float3( 0.f, .8f, 0.f), DIFF } 
 	//{ { 5.f, 1.f, 5.f }, { 5.f, 2.f, 5.f }, { 6.f, 1.f, 5.f }, { 1.f, 0.f, 0.f }, { 1.f, 0.f, 0.f }, DIFF }
 };
 
@@ -147,18 +182,45 @@ Triangle test_triangle[] = {
 	{ make_float3(-2, 0, 0), make_float3(0, 2, 0), make_float3(2, 0, 0), make_float3(0,0,0), make_float3(1,0,0), DIFF }
 };
 
+__device__ void look_at_spheres(Sphere* spr_list, int numberofspheres){
+	for (int i = 0; i < numberofspheres; i++){
+		printf("Spr %d cent = %.2f\n", i, spr_list[i].rad);
+	}
+}
+
+__device__ void look_at_triangles(Triangle* tri_list, int numberoftris){
+	for (int i = 0; i < numberoftris; i++){
+		//printf("Triangle %d v1 = (%.2f, %.2f, %.2f)\n", i, tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
+		float3 origin = make_float3(0, 1, -5);
+		float3 direction = make_float3(0, 0, 1);
+		Ray cam = Ray(origin, direction);
+		printf("Intersection = %.2f", tri_list[i].intersectTri(cam));
+	}
+}
+
 //this function loads the spheres defined above into DRAM
 void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 	size_t numspheres = numberofspheres * sizeof(Sphere);
+	printf("Loading %d bytes for %d spheres\,", numspheres, numberofspheres);
 	cudaMalloc((void **)&dev_sphere_ptr, numspheres);
 	cudaMemcpy(dev_sphere_ptr, &sph_list[0], numspheres, cudaMemcpyHostToDevice);
+
+	bool debug = false;
+
+	if (debug){
+		for (int i = 0; i < numberofspheres; i++){
+			printf("Sphere %d was of size %d. ", i, sizeof(Sphere));
+		}
+	}
+
 }
 
 //this function loads the triangles defined above into DRAM
 void loadTrisToMemory(Triangle *tri_list, int numberoftris){
 	size_t numtris = numberoftris * sizeof(Triangle);
-	cudaMalloc((void **)&dev_tri_ptr, 64);
-	cudaMemcpy(dev_tri_ptr, &tri_list[0], 64, cudaMemcpyHostToDevice);
+	printf("Loading %d bytes for %d triangles\,", numtris, numberoftris);
+	cudaMalloc((void **)&dev_tri_ptr, numtris);
+	cudaMemcpy(dev_tri_ptr, &tri_list[0], numtris, cudaMemcpyHostToDevice);
 }
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
@@ -177,10 +239,10 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	}
 	//0 through 8 for ID represent spheres 1 through 9
 	//the next ID's correspond to triangles
-	for (int i = numspheres; i < numspheres+numtris; i++){
+	for (int i = 0; i < numtris; i++){
 		if ((tprime = tri_list[i].intersectTri(r)) && tprime < t){
 			t = tprime;
-			id = i ;
+			id = i + numspheres;
 		}
 	}
 	//if hit occured, t is > 0 and < inf.
@@ -266,8 +328,9 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 		}
 		else{ //hit item was not a sphere, therefore it was a triangle.
 			//const Triangle &hitobj = tri_list[id];
+			//printf("We hit triangle! ID = %d, t = %.2f\n", id, t);
 			hitpt = r.origin + r.dir*t;
-			hitnorm = make_float3(0.f, 0.f, -1.f);
+			hitnorm = tri_list[id - numspheres].get_Normal(hitpt);
 			float ntest = dot(hitnorm, r.dir);
 			norm = (ntest < 0 ? hitnorm : hitnorm * -1);
 
@@ -373,26 +436,38 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
+	unsigned int pixel_i = x;
+	unsigned int pixel_j = y;
+	//printf("Pixeli, j = %d, %d\n", pixel_i, pixel_j);
 	unsigned int i = (YRES - y - 1)*XRES + x; //get current pixel index from thread index
 	
 	curandState randstate;
 	int globalThreadID = (blockIdx.x + blockIdx.y * gridDim.x) * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
 	curand_init(x+y + globalThreadID, 0, 0, &randstate);
 
+	//float3 cam_origin = make_float3(5.f, 5.2f, 29.56f);
+	//float3 cam_up = normalize(make_float3(0.f, 1, 0));
+	//float3 cam_target = make_float3(5.f, 5.2f, 0.f);
+	//float3 cam_dir = normalize(make_float3(0.f, -0.0042612f, -.1));
+	//float3 cam_right = make_float3(-1, 0, 0);
+	//Camera rayCaster = Camera(cam_origin, cam_dir, cam_up, cam_right);
+
 	//hardcoded camera position - start from lower left corner of view plane
 	Ray cam(make_float3(5.0f, 5.2f, 29.56f), normalize(make_float3(0.f, -0.0042612f, -.1)));
 	//compute x and y offsets based on pixel coordinate
 	float3 ofs_x = make_float3(XRES * .5135 / YRES, 0.f, 0.f);
 	float3 ofs_y = normalize(cross(ofs_x, cam.dir))*0.5135f; //.5135 is field of view, roughly 30 degrees
-	float3 col;
-	col = make_float3(0.f, 0.f, 0.f); //reset for each pixel
+	float3 col = make_float3(0.f, 0.f, 0.f); //reset for each pixel
 
 	for (int s = 0; s < SAMPLES; s++){
 		//primary ray dir, randomly jittered by a small amount (will be changed when there's a better camera struct)
 		float3 dir = cam.dir + ofs_x * ((.25f + x) / XRES - 0.5f + curand_uniform(&randstate) / XRES) + ofs_y * ((.25f + y) / YRES - 0.5f + curand_uniform(&randstate) / YRES);
+		//Ray casted = rayCaster.computeCameraRay(pixel_i, pixel_j, &randstate);
+		
 		//create incoming ray, add incoming radiance to final_col; push ray to start inside sphere that forms wall where we view from
 		//that way, the scene does not distort at the edges
-		col = col + radiance(Ray(cam.origin + dir * 4.f, normalize(dir)), &randstate, sphere_list, tri_list, numtris) * (1.f / SAMPLES);
+		col = col + radiance(Ray(cam.origin + dir*4.f, normalize(dir)), &randstate, sphere_list, tri_list, numtris) * (1.f/SAMPLES);
+		//col = col + radiance(Ray(casted.origin, casted.dir), &randstate, sphere_list, tri_list, numtris) * (1.f/SAMPLES);
 	}
 	//write rgb value of pixel to image buffer on GPU, clamped on [0.0f, 1.0f]
 	out[i] = make_float3(clamp(col.x, 0.f, 1.f), clamp(col.y, 0.f, 1.f), clamp(col.z, 0.f, 1.f));
@@ -409,7 +484,7 @@ __global__ void test_kernel(float* out, Triangle *tri_list, int numtris, Sphere 
 //	Triangle* tri = new Triangle[1];
 //	tri[0] = Triangle(make_float3(-2, 0, 0), make_float3(0, 2, 0), make_float3(2, 0, 0), make_float3(1, 0, 0), make_float3(1, 0, 0), DIFF);
 	
-	
+	look_at_triangles(tri_list, 1);
 	float3 target = make_float3(-2 + x / 50, 0 + y / 50, -5);
 	float3 orig = make_float3(0, 0, 5);
 	Ray cam(orig, make_float3(0,0,1));
