@@ -2,6 +2,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include "Reader.h"
 #include "cutil_math.h"
 #include <device_launch_parameters.h>
 #include <device_functions.h>
@@ -19,7 +20,7 @@
 #endif
 
 //forward declarations
-extern void renderKernelWrapper(float3 *out_host);
+extern void renderKernelWrapper(float3 *out_host, int numspheres, int numtris);
 extern void testKernelWrapper(float *out_host);
 extern void readMeshToTexMemory();
 struct Sphere;
@@ -168,9 +169,11 @@ int loadOBJ(const char* filename, std::vector<float3> &vertex_list, std::vector<
 				k++;
 				//now move on to the second number (if there is one).
 				//if we have face/no uv/norm, the face takes the form a//b exanple: 1//4 2//4 3//1
-				if (group[k] == '/' || k == group.size()){
-					has_UV = false;
-					has_UVs = false;
+				if (k <= group.size()){
+					if (group[k] == '/'){
+							has_UV = false;
+							has_UVs = false;
+					}
 				}
 				_i = k;//if, however, we do have a uv item, go to the next '/'
 				while (group[k] != '/'&& k < group.size()){
@@ -189,8 +192,91 @@ int loadOBJ(const char* filename, std::vector<float3> &vertex_list, std::vector<
 	}
 	delete xyz;
 	delete uv;
+	printf("Read in succesful.\n");
 	return face_indices.size() / 3;//face indices represents the physical face of the triangle (3 vertices, 3 uv's). 
 }
+
+//populateTriangles takes the list of vertices and UVS, and compiles a list of TriangleFaces (when I say list, I mean std::vector)
+//	min and max are float3's that define the bounding box for that particular mesh
+//	hasUVs is a bool that reflects if the obj file parsed had uv_indices or not
+//	scale and translate are factors used in modifying the location/size of the mesh.
+//populateTriangles returns an int representing the number of triangle faces we're working with.
+//	NOTE: Scale is applied first, THEN TRANSLATE.
+//	Scale is performed  using 0,0,0 as an origin.
+int populateTriangles(const std::vector<float3> &vertex_list, const std::vector<float2> &uv_list, const std::vector<unsigned int> &f_indices, const std::vector<unsigned int> &uv_indices, std::vector<loadingTriangle> &tris, float3 &min, float3 &max, const float3 &translate, const float3 &scale, const bool &has_UVs){
+	const int num_faces = f_indices.size() / 3;
+	min = make_float3(99999999.f, 99999999.f, 9999999.f);
+	max = make_float3(-99999999.f, -99999999.f, -9999999.f);
+	float3  temp;
+	/*printf("\nNumber of verts in vertex list: %d", vertex_list.size());
+	printf("\nNumber of f_indices: %d\n", f_indices.size());
+	printf("num_faces %d\n", num_faces);*/
+	//TriangleFace thisTri;
+	for (int i = 0; i < num_faces; i++){
+		//first, grab the indices for the vertices that make this face
+		int v1 = f_indices[3 * i] - 1;
+		int v2 = f_indices[3 * i + 1] - 1;
+		int v3 = f_indices[3 * i + 2] - 1;
+		int uv1 = 0;
+		int uv2 = 0;
+		int uv3 = 0;
+
+		//also grab the UV indices, if they exist
+		if (has_UVs){
+			uv1 = uv_indices[3 * i] - 1;
+			uv2 = uv_indices[3 * i + 1] - 1;
+			uv3 = uv_indices[3 * i + 2] - 1;
+		}
+
+		//save these vertices to compare min/max for creation of bounding box 
+		float3 _v1 = vertex_list[v1];
+		float3 _v2 = vertex_list[v2];
+		float3 _v3 = vertex_list[v3];
+
+		float2 _uv1 = make_float2(0, 0);
+		float2 _uv2 = make_float2(0, 0);
+		float2 _uv3 = make_float2(0, 0);
+
+		if (has_UVs){
+			_uv1 = uv_list[uv1];
+			_uv2 = uv_list[uv2];
+			_uv3 = uv_list[uv3];
+		}
+		//scale
+		_v1 *= scale;
+		_v2 *= scale;
+		_v3 *= scale;
+		//translate
+		_v1 += translate;
+		_v2 += translate;
+		_v3 += translate;
+
+		//next, create thisTri with the approrpiate vertices
+		loadingTriangle thisTri(_v1, _v2, _v3);
+
+		//update min for bounding box
+		temp = min3(_v1, _v2, _v3);
+		if (temp.x < min.x)
+			min.x = temp.x;
+		if (temp.y < min.y)
+			min.y = temp.y;
+		if (temp.z < min.z)
+			min.z = temp.z;
+		//update max for bounding box
+		temp = max3(_v1, _v2, _v3);
+		if (temp.x > max.x)
+			max.x = temp.x;
+		if (temp.y > max.y)
+			max.y = temp.y;
+		if (temp.z > max.z)
+			max.z = temp.z;
+		//add thisTri to tris list
+		tris.push_back(thisTri);
+
+	}
+	return tris.size();
+}
+
 //hashing function to get seed for curandDevice
 //this fast hash method was developed by Thomas Wang
 //this is used to re-seed curand every sample
@@ -216,62 +302,64 @@ inline int toInt(float x){
 
 int main()
 {
-	bool debug = false;
-	if (debug){
-		printf("Debug mode. Trying test triangle\n");
+	//these are the parameters needed to read an .OBJ file and store the triangle mesh data. 
+	//currently only supports 1 mesh. Kinda hack-y
+	std::vector<float3> vertex_list, normal_list;
+	std::vector<float2> uv_list;
+	std::vector<unsigned int> f_indices, uv_indices;
+	std::vector<loadingTriangle> triangle_list;
+	float3 min = make_float3(-99999999.9f, -99999999.9f, -99999999.9f);
+	float3 max = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
+	float3 scale = make_float3(1, 1, 1);
+	float3 translate = make_float3(5, 5, 5);
+	char* filename = "teapot.obj";
+	std::cout << filename << " being loaded. \n\n";
+	bool has_uvs = false;
 
-		float* out_host = new float[100 * 100];
-
-		testKernelWrapper(out_host);
-		printf("done\n");
-		FILE *img = fopen("test.txt", "w");
-		for (int i = 0; i < 100 * 100; i++){
-			fprintf(img, "%.0f", out_host[i]);
-			if (i % 100 == 0){
-				fprintf(img, "\n");
-			}
-		}
-		delete[] out_host;
-		return 0;
+	int numtris = loadOBJ(filename, vertex_list, normal_list, uv_list, f_indices, uv_indices, has_uvs);
+	if (numtris == populateTriangles(vertex_list, uv_list, f_indices, uv_indices, triangle_list, min, max, translate, scale, has_uvs)){
+		std::cout << "Successfully loaded " << filename << " with " << numtris << " triangles\n";
 	}
-	if (!debug)
-	{
-		printf("CUDA initialized. \nRender for %d samples started...\n", SAMPLES);
-
-		cudaEvent_t start, stop;
-		float time_elapsed;
-		cudaEventCreate(&start);
-		cudaEventCreate(&stop);
-
-		//start timer
-		cudaEventRecord(start);
-		//schedule GPU threads and launch kernel from host CPU
-		float3* out_host = new float3[XRES*YRES];
-
-		renderKernelWrapper(out_host);
-
-		cudaEventRecord(stop);
-		cudaDeviceSynchronize();
-
-		printf("Finsihed rendering!\n");
-		cudaEventSynchronize(stop);
-		cudaEventElapsedTime(&time_elapsed, start, stop);
-		printf("Render took %.4f seconds\n", time_elapsed / 1000.f);
-
-		FILE *img = fopen("render.ppm", "w");
-		fprintf(img, "P3\n%d %d\n %d\n", XRES, YRES, 255);
-
-		//loop over pixels, write RGB values
-		for (int i = 0; i < XRES * YRES; i++){
-			fprintf(img, "%d %d %d\n", toInt(out_host[i].x),
-				toInt(out_host[i].y),
-				toInt(out_host[i].z));
-		}
-
-		printf("Saved render image to 'render.ppm'\n");
-
-		//release host memory
-		delete[] out_host;
+	else{
+		std::cout << "Failed loading " << filename << "\n";
 	}
+
+	printf("GPUrt initialized. \nRender for %d samples started...\n", SAMPLES);
+
+	cudaEvent_t start, stop;
+	float time_elapsed;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	//start timer
+	cudaEventRecord(start);
+	//schedule GPU threads and launch kernel from host CPU
+	float3* out_host = new float3[XRES*YRES];
+
+	renderKernelWrapper(out_host, 9, 2);
+
+	cudaEventRecord(stop);
+	cudaDeviceSynchronize();
+
+	printf("Finsihed rendering!\n");
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&time_elapsed, start, stop);
+	printf("Render took %.4f seconds\n", time_elapsed / 1000.f);
+
+	FILE *img = fopen("render.ppm", "w");
+	fprintf(img, "P3\n%d %d\n %d\n", XRES, YRES, 255);
+
+	//loop over pixels, write RGB values
+	for (int i = 0; i < XRES * YRES; i++){
+		fprintf(img, "%d %d %d\n", toInt(out_host[i].x),
+			toInt(out_host[i].y),
+			toInt(out_host[i].z));
+	}
+
+	printf("Saved render image to 'render.ppm'\n");
+
+	//release host memory
+	delete[] out_host;
+	
 	return 0;
 }

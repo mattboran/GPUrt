@@ -11,7 +11,7 @@
 #define XRES 320
 #define YRES 240
 
-#define SAMPLES 96
+#define SAMPLES 512
 
 //forward declarations
 uint hash(uint seed);
@@ -49,9 +49,26 @@ struct Camera{
 
 	//This method returns a Ray object generated from i and j coordinates (0 through XRES and 0 through YRES)
 	__device__ inline Ray computeCameraRay(int i, int j, curandState *randstate){
-		float normalized_i = (i / (float)XRES) - 0.5f +(curand_uniform(randstate)*0.001f-0.0005f);
-		float normalized_j = (j / (float)YRES) - 0.5f +(curand_uniform(randstate)*0.001f-0.0005f);
-		float3 image_point = normalized_i * camera_right + 
+		//inverse Xres and YRES are used to produce a correct aspect ratio based on pixel values of
+		//the render screen
+		float inv_yres = 1.f / YRES;
+		float r1 = 2 * curand_uniform(randstate), dx;//r1 and r2 are 
+		if (r1 < 1){
+			dx = sqrtf(r1) - 1;
+		}
+		else{
+			dx = 1 - sqrtf(2 - r1);
+		}
+		float r2 = 2 * curand_uniform(randstate), dy;
+		if (r2 < 1){
+			dy = sqrtf(r2) - 1;
+		}
+		else{
+			dy = 1 - sqrtf(2 - r2);
+		}
+		float normalized_i = ((i + dx) / (float)XRES) - 0.5f;//+ (curand_uniform(randstate)*inv_yres);//*inv_xres);// -inv_xres*0.5f);
+		float normalized_j = ((j + dy) / (float)YRES) - 0.5f;// +(curand_uniform(randstate)*inv_yres);//*inv_yres); //-inv_xres*0.5f);
+			float3 image_point = normalized_i * camera_right * (inv_yres * XRES) +
 			normalized_j * camera_up + 
 			camera_position + camera_direction;
 		float3 ray_direction = image_point - camera_position;
@@ -64,7 +81,7 @@ struct Camera{
 //Sphere - primitive object defined by radius and center.
 //All primitives also have emmission (light, a vector) and color (another vector)
 //struct __declspec(align(64)) Sphere{
-struct __declspec(align(32))Sphere {
+struct __declspec(align(64))Sphere {
 	float rad;
 	float3 cent, emit, col; //center, emission, color
 	Refl_t refl; //material type
@@ -171,24 +188,16 @@ Sphere spheres[] = {
 	{ 60.0f, { 5.00f, 68.16f - .05f, 8.16f }, { 2.0f, 1.8f, 1.6f }, { 0.0f, 0.0f, 0.0f }, DIFF }  // Light
 };
 
-Sphere spheres2[] = {
-	{ 2.f, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, DIFF }
-};
-
 Triangle tris[] = {
 	{ make_float3(2.7f, 3.3f, 4.7f), make_float3(4.5f, 4.95f, 4.7f), make_float3( 7.3f, 3.3f, 7.8f ), make_float3(0.f, 0.f, 0.f ), make_float3( 0.f, .8f, 0.f), DIFF } ,
 	{ make_float3(2.7f, 3.3f, 4.7f), make_float3(2.75f, 4.95f, 4.7f), make_float3(-2.7f, 3.3f, 4.8f), make_float3(0.f, 0.f, 0.f), make_float3(0.3f, 0.f, 0.f), DIFF }
 	//{ { 5.f, 1.f, 5.f }, { 5.f, 2.f, 5.f }, { 6.f, 1.f, 5.f }, { 1.f, 0.f, 0.f }, { 1.f, 0.f, 0.f }, DIFF }
 };
 
-Triangle test_triangle[] = {
-	{ make_float3(-2, 0, 0), make_float3(0, 2, 0), make_float3(2, 0, 0), make_float3(0,0,0), make_float3(1,0,0), DIFF }
-};
-
 //this function loads the spheres defined above into DRAM
 void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 	size_t numspheres = numberofspheres * sizeof(Sphere);
-	printf("Loading %d bytes for %d spheres\,", numspheres, numberofspheres);
+	printf("Loading %d bytes for %d spheres,\n", numspheres, numberofspheres);
 	cudaMalloc((void **)&dev_sphere_ptr, numspheres);//void** cast is so cudaMalloc will accept the address of sphere pointer as parameter
 	cudaMemcpy(dev_sphere_ptr, &sph_list[0], numspheres, cudaMemcpyHostToDevice);
 }
@@ -196,10 +205,12 @@ void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 //this function loads the triangles defined above into DRAM
 void loadTrisToMemory(Triangle *tri_list, int numberoftris){
 	size_t numtris = numberoftris * sizeof(Triangle);
-	printf("Loading %d bytes for %d triangles\,", numtris, numberoftris);
+	printf("Loading %d bytes for %d triangles,\n", numtris, numberoftris);
 	cudaMalloc((void **)&dev_tri_ptr, numtris); //void** cast is so cudaMalloc will accept the address of triangle pointer as parameter
 	cudaMemcpy(dev_tri_ptr, &tri_list[0], numtris, cudaMemcpyHostToDevice);
 }
+struct loadingTriangle;
+
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris){
@@ -425,82 +436,30 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 	float3 cam_up = normalize(make_float3(0.f, 1, 0));
 	float3 cam_target = make_float3(5.f, 5.2f, 0.f);
 	Camera rayCaster = Camera(cam_origin, cam_target, cam_up);
-
-	//hardcoded camera position - start from lower left corner of view plane
-	//Ray cam(make_float3(5.0f, 5.2f, 29.56f), normalize(make_float3(0.f, -0.0042612f, -.1)));
-	//compute x and y offsets based on pixel coordinate
-	//float3 ofs_x = make_float3(XRES * .5135 / YRES, 0.f, 0.f);
-	//float3 ofs_y = normalize(cross(ofs_x, cam.dir))*0.5135f; //.5135 is field of view, roughly 30 degrees
 	float3 col = make_float3(0.f, 0.f, 0.f); //reset for each pixel
 
 	for (int s = 0; s < SAMPLES; s++){
 		//primary ray dir, randomly jittered by a small amount (will be changed when there's a better camera struct)
-		//float3 dir = cam.dir + ofs_x * ((.25f + x) / XRES - 0.5f + curand_uniform(&randstate) / XRES) + ofs_y * ((.25f + y) / YRES - 0.5f + curand_uniform(&randstate) / YRES);
-		//Ray casted = rayCaster.computeCameraRay(x, y, &randstate);
-		
-		//create incoming ray, add incoming radiance to final_col; push ray to start inside sphere that forms wall where we view from
-		//that way, the scene does not distort at the edges
-		//col = col + radiance(Ray(cam.origin + dir*4.f, normalize(dir)), &randstate, sphere_list, tri_list, numtris) * (1.f/SAMPLES);
-		col = col + radiance(rayCaster.computeCameraRay(x, y, &randstate), &randstate, sphere_list, tri_list, numtris) * (1.f / SAMPLES);
+		col = col + radiance(rayCaster.computeCameraRay(x, y, &randstate), &randstate, sphere_list, tri_list, numtris);// (1.f / SAMPLES);
 	}
 	//write rgb value of pixel to image buffer on GPU, clamped on [0.0f, 1.0f]
-	out[i] = make_float3(clamp(col.x, 0.f, 1.f), clamp(col.y, 0.f, 1.f), clamp(col.z, 0.f, 1.f));
+	float cor = (1.f / SAMPLES); //cor = correction: we want the average color
+	out[i] = make_float3(clamp(col.x*cor, 0.f, 1.f), clamp(col.y*cor, 0.f, 1.f), clamp(col.z*cor, 0.f, 1.f));
 }
 
-//this kernel is separate and only performs a few tests. this is to make sur ethat the the triangles are
-//successfully loaded and that the intersection works properly.
-__global__ void test_kernel(float* out, Triangle *tri_list, int numtris, Sphere *spr_list, int numspheres){
-	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
-	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
-	unsigned int i = (100 - y - 1) * 100 + x;
-
-	//int* test_out_dvc;
-//	Triangle* tri = new Triangle[1];
-//	tri[0] = Triangle(make_float3(-2, 0, 0), make_float3(0, 2, 0), make_float3(2, 0, 0), make_float3(1, 0, 0), make_float3(1, 0, 0), DIFF);
-	
-//	look_at_triangles(tri_list, 1);
-	float3 target = make_float3(-2 + x / 50, 0 + y / 50, -5);
-	float3 orig = make_float3(0, 0, 5);
-	Ray cam(orig, make_float3(0,0,1));
-
-	if (testIntersect(cam, tri_list, 1, spr_list, 1)){
-		out[i] = 1.f;
-	}
-	else{
-		out[i] = 0.f;
-	}
-	//out[i] = sizeof(Triangle);
-
-}
-
-void testKernelWrapper(float* out_host){
-	float* out_dvc;
-	cudaMalloc(&out_dvc, 100 * 100 * sizeof(float));
-	loadSpheresToMemory(spheres2, 1);
-	loadTrisToMemory(test_triangle, 1);
-	dim3 block(8, 8, 1);
-	dim3 grid(100 / block.x, 100 / block.y, 1);
-	test_kernel <<< grid, block >> > (out_dvc, dev_tri_ptr, 1, dev_sphere_ptr, 1);
-
-	cudaMemcpy(out_host, out_dvc, 100 * 100 * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaFree(out_dvc);
-
-	cudaDeviceSynchronize();
-}
 //this wrapper function is used when the cpp main file calls the render kernel
-void renderKernelWrapper(float3* out_host){
-	//float3* out_host = new float3[XRES * YRES];
+void renderKernelWrapper(float3* out_host, int numspheres, int numtris){
 	float3* out_dvc;
 
 	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
 
-	loadSpheresToMemory(spheres, 9);
-	loadTrisToMemory(tris, 2);
+	loadSpheresToMemory(spheres, numspheres);
+	loadTrisToMemory(tris, numtris);
 
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
 
-	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, 2);
+	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris);
 
 	cudaMemcpy(out_host, out_dvc, XRES * YRES * sizeof(float3), cudaMemcpyDeviceToHost);
 	cudaFree(out_dvc);
