@@ -22,19 +22,10 @@
 //forward declarations
 extern void renderKernelWrapper(float3 *out_host, int numspheres, int numtris);
 extern void testKernelWrapper(float *out_host);
-extern void readMeshToTexMemory();
+extern void readMeshToMemory();
 struct Sphere;
 
-//This struct is used to load triangles from .obj files. This will be passed via wrapper 
-//to the CUDA portion to be loaded into texture memory
-struct loadingTriangle{
-	float4 v1, e1, e2;
-	loadingTriangle(float3 _v1, float3 _v2, float3 _v3){
-		v1 = make_float4(_v1);
-		e1 = make_float4(_v2 - _v1);
-		e2 = make_float4(_v3 - _v1);
-	}
-};
+
 //This function loads 3d model data from a .obj file.
 //Inputs: char array filename, vector - list of all vertices, vector - list of all UV's, vector - list of all faces indices
 //Output: int representing number of faces in face_list
@@ -325,7 +316,7 @@ int main()
 	float3 max = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
 	float3 scale = make_float3(1, 1, 1);
 	float3 translate = make_float3(5, 5, 5);
-	char* filename = "testfile.obj";
+	char* filename = "teapot.obj";
 	std::cout << filename << " being loaded. \n\n";
 	bool has_uvs = false;
 

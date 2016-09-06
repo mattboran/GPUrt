@@ -1,5 +1,6 @@
 
 #include <iostream>
+#include "Reader.h"
 #include "cutil_math.h"
 #include <device_launch_parameters.h>
 #include <device_functions.h>
@@ -209,8 +210,64 @@ void loadTrisToMemory(Triangle *tri_list, int numberoftris){
 	cudaMalloc((void **)&dev_tri_ptr, numtris); //void** cast is so cudaMalloc will accept the address of triangle pointer as parameter
 	cudaMemcpy(dev_tri_ptr, &tri_list[0], numtris, cudaMemcpyHostToDevice);
 }
-struct loadingTriangle;
 
+//this function loads an entire mesh's worth of triangles to dev_tri_ptr
+void loadMeshToMemory(loadingTriangle *tri_list, const int numberoftris){
+	Triangle* triangle_list= new Triangle[numberoftris];
+	for (int i = 0; i < numberoftris; i++){
+		triangle_list[i].v1 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
+		triangle_list[i].v1 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
+		triangle_list[i].e2 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
+	}
+}
+
+//This is the new triangle implementation. Eventually,this will replace the previous triangle struct 
+struct meshTriangle{
+	float4 v1, e1, e2;
+	meshTriangle(float4 _v1, float4 _e1, float4 _e2) :
+		v1(_v1), e1(_e1), e2(_e2) {}
+	//Moller-Trumbore ray-triangle intersection.
+	//consider storing triangles as 1 vertex and 2 edges for faster compute
+	__device__ float intersectTri(const Ray& r) const{
+		float3 edge1 = make_float3(e1.w, e1.x, e1.y);
+		float3 edge2 = make_float3(e2.w, e2.x, e2.y);
+		float3 P, Q, T;
+		float det, inv_det, u, v, t;
+
+		//calculate determinant
+		P = cross(r.dir, edge2);
+		det = dot(edge1, P);
+		if (fabs(det) < EPSILON)
+			return 0.0f;
+		inv_det = 1.f / det;
+
+		//distance from V1 to ray origin
+		T = r.origin - make_float3(v1.w, v1.x, v1.y);
+		//u parameter, test bound
+		u = dot(T, P) * inv_det;
+		if (u < 0.f || u > 1.f)
+			return 0.0f;
+		//v parameter, test bound
+		Q = cross(T, edge1);
+		v = dot(r.dir, Q) * inv_det;
+		if (v < 0.f || u + v > 1.f)
+			return 0.0f;
+		t = dot(edge2, Q) * inv_det;
+
+		if (t > EPSILON){//hit
+			return t;
+		}
+
+		return 0.f;
+	}
+
+	//return the face normal of the triangle. Interpolate (later in the project)
+	__device__ float3 get_Normal(const float3& hitpt){
+		float3 edge1 = v2 - v1;
+		float3 edge2 = v3 - v1;
+		return cross(edge1, edge2);
+	}
+};
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris){
