@@ -148,13 +148,20 @@ int loadOBJ(const char* filename, std::vector<float3> &vertex_list, std::vector<
 			i = 2;//start position of substring (each of 3 face index groups)
 			j = 2; //end position of substring (each of 3 face index groups)
 			int k = 2; //used to divide string by token '/'
-
+			std::string group;
 			for (int q = 0; q < 3; q++){
-				bool has_UV = true;
-				while (oneline[j] != ' ' && j < linesize){
-					j++;
+				bool has_UV = false;
+				if (oneline[i + 1] == ' '){
+					j = i + 1;
+					group = oneline[i];
 				}
-				std::string group = oneline.substr(i, j);
+				else{
+					while (oneline[j] != ' ' && j < linesize){
+						j++;
+					}
+					group = oneline.substr(i, j);
+				}
+				
 				if (oneline[j] == ' '){
 					j++;
 				}
@@ -162,10 +169,16 @@ int loadOBJ(const char* filename, std::vector<float3> &vertex_list, std::vector<
 				k = 0;//k is the runner used to grab endpoint for substring of "group"
 				int _i = 0;//_i is the index that grabs the start of an index group (i.e. 4/81/14 is group. _i is 0 (4), k is 0 ('4'), because index 1 contains '/'. That substring is saved and parsed.
 				//Then k is incremented (to skip '/'). _i is set to k. now _i is 2 (8), k runs once, to index 3 (1). second substring is 81...etc
-				while (group[k] != '/' && k < group.size()){//only record vertex index, not normal index or texture index
-					k++;
+				if (group.size() == 1){
+					face_indices.push_back(stoi(group));
 				}
-				face_indices.push_back(stoi(group.substr(_i, k)));
+				else{
+					while (group[k] != '/' && k < group.size() - 1){//only record vertex index, not normal index or texture index
+						k++;
+					}
+					face_indices.push_back(stoi(group.substr(_i, k)));
+				}
+				
 				k++;
 				//now move on to the second number (if there is one).
 				//if we have face/no uv/norm, the face takes the form a//b exanple: 1//4 2//4 3//1
@@ -312,11 +325,12 @@ int main()
 	float3 max = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
 	float3 scale = make_float3(1, 1, 1);
 	float3 translate = make_float3(5, 5, 5);
-	char* filename = "teapot.obj";
+	char* filename = "testfile.obj";
 	std::cout << filename << " being loaded. \n\n";
 	bool has_uvs = false;
 
 	int numtris = loadOBJ(filename, vertex_list, normal_list, uv_list, f_indices, uv_indices, has_uvs);
+	has_uvs = false;
 	if (numtris == populateTriangles(vertex_list, uv_list, f_indices, uv_indices, triangle_list, min, max, translate, scale, has_uvs)){
 		std::cout << "Successfully loaded " << filename << " with " << numtris << " triangles\n";
 	}
