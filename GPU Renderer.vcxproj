@@ -152,6 +152,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="cutil_math.h" />
+    <ClInclude Include="Reader.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="rayTracerNoGL.cu" />
