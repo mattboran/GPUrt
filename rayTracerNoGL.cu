@@ -12,7 +12,7 @@
 #define XRES 320
 #define YRES 240
 
-#define SAMPLES 512
+#define SAMPLES 16
 
 //forward declarations
 uint hash(uint seed);
@@ -210,6 +210,24 @@ void loadTrisToMemory(Triangle *tri_list, int numberoftris){
 	cudaMalloc((void **)&dev_tri_ptr, numtris); //void** cast is so cudaMalloc will accept the address of triangle pointer as parameter
 	cudaMemcpy(dev_tri_ptr, &tri_list[0], numtris, cudaMemcpyHostToDevice);
 }
+
+//this function loads an entire mesh's worth of triangles to dev_tri_ptr
+void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
+	Triangle* trianglelist = new Triangle[numberoftris];
+	for (int i = 0; i < numberoftris; i++){
+		trianglelist[i].v1 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
+		trianglelist[i].v2 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
+		trianglelist[i].v3 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
+	}
+	printf("Loading mesh made of %d triangles for %d bytes\n", numberoftris, numberoftris*sizeof(Triangle));
+	//Note - This will over-write the other triangles stored at &dev_tri_ptr
+	size_t numtris = numberoftris * sizeof(Triangle);
+	cudaMalloc((void**)&dev_tri_ptr, numtris);
+	cudaMemcpy(dev_tri_ptr, &trianglelist[0], numtris, cudaMemcpyHostToDevice);
+	printf("Load of mesh success\n");
+	delete[] trianglelist;
+}
+
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris){
@@ -447,13 +465,14 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 }
 
 //this wrapper function is used when the cpp main file calls the render kernel
-void renderKernelWrapper(float3* out_host, int numspheres, int numtris){
+void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris){
 	float3* out_dvc;
 
 	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
 
 	loadSpheresToMemory(spheres, numspheres);
-	loadTrisToMemory(tris, numtris);
+	loadMeshToMemory(tri_list, numtris);
+	//loadTrisToMemory(tris, numtris);
 
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);

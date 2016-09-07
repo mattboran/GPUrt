@@ -20,11 +20,61 @@
 #endif
 
 //forward declarations
-extern void renderKernelWrapper(float3 *out_host, int numspheres, int numtris);
+extern void renderKernelWrapper(float3 *out_host, int numspheres, loadingTriangle* tri_list, int numtris);
 extern void testKernelWrapper(float *out_host);
-extern void readMeshToMemory();
+extern void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris);
+
 struct Sphere;
 
+//this function returns the minimum XYZ of the 3 vector3's presented.
+//for bounding box creation
+float3 min3(const float3 &v1, const float3 &v2, const float3 &v3){
+	float3 min(v1);
+	if (v2.x < min.x){
+		min.x = v2.x;
+	}
+	if (v3.x < min.x){
+		min.x = v3.x;
+	}
+	if (v2.y < min.y){
+		min.y = v2.y;
+	}
+	if (v3.y < min.y){
+		min.y = v3.y;
+	}
+	if (v2.z < min.z){
+		min.z = v2.z;
+	}
+	if (v3.z < min.z){
+		min.z = v3.z;
+	}
+	return min;
+}
+
+//this function returns the max XYZ of the 3 vector3 parameters
+//for bounding box creation
+float3 max3(const float3 &v1, const float3 &v2, const float3 &v3) {
+	float3 max(v1);
+	if (v2.x > max.x){
+		max.x = v2.x;
+	}
+	if (v3.x > max.x){
+		max.x = v3.x;
+	}
+	if (v2.y > max.y){
+		max.y = v2.y;
+	}
+	else if (v3.y > max.y){
+		max.y = v3.y;
+	}
+	if (v2.z > max.z){
+		max.z = v2.z;
+	}
+	else if (v3.z > max.z){
+		max.z = v3.z;
+	}
+	return max;
+}
 
 //This function loads 3d model data from a .obj file.
 //Inputs: char array filename, vector - list of all vertices, vector - list of all UV's, vector - list of all faces indices
@@ -192,7 +242,6 @@ int loadOBJ(const char* filename, std::vector<float3> &vertex_list, std::vector<
 
 			}
 		}
-
 	}
 	delete xyz;
 	delete uv;
@@ -259,7 +308,7 @@ int populateTriangles(const std::vector<float3> &vertex_list, const std::vector<
 		loadingTriangle thisTri(_v1, _v2, _v3);
 
 		//update min for bounding box
-		temp = min3(_v1, _v2, _v3);
+		temp = (_v1, _v2, _v3);
 		if (temp.x < min.x)
 			min.x = temp.x;
 		if (temp.y < min.y)
@@ -328,6 +377,8 @@ int main()
 	else{
 		std::cout << "Failed loading " << filename << "\n";
 	}
+	//now load the mesh to CUDA memory. Since we use vectors, we pass address of vector[0] as our pointer to triangle_list
+	//loadMeshToMemory(&triangle_list[0], triangle_list.size());
 
 	printf("GPUrt initialized. \nRender for %d samples started...\n", SAMPLES);
 
@@ -341,7 +392,7 @@ int main()
 	//schedule GPU threads and launch kernel from host CPU
 	float3* out_host = new float3[XRES*YRES];
 
-	renderKernelWrapper(out_host, 9, 2);
+	renderKernelWrapper(out_host, 9, &triangle_list[0], triangle_list.size());
 
 	cudaEventRecord(stop);
 	cudaDeviceSynchronize();
