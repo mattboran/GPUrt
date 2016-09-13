@@ -12,7 +12,7 @@
 #define XRES 320
 #define YRES 240
 
-#define SAMPLES 16
+#define SAMPLES 1
 
 //forward declarations
 uint hash(uint seed);
@@ -29,7 +29,7 @@ struct Ray{
 	float3 dir;
 	//construct on gpu
 	__device__ Ray(float3 o, float3 d) : origin(o), dir(d) { }
-	__host__ Ray(float3 o, float3 d) : origin(o), dir(d) {}
+	
 };
 
 //This is a model of the camera that is used to generate rays through the viewing plane. We use the left-hand-pointing
@@ -214,11 +214,24 @@ void loadTrisToMemory(Triangle *tri_list, int numberoftris){
 
 //this function loads an entire mesh's worth of triangles to dev_tri_ptr
 void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
-	Triangle* trianglelist = new Triangle[numberoftris];
+	
+	//I really hope this doesn't crash.This was done to avoid having the new Triangle[numberoftris] call because we didn't have a global 
+	//constructor for Triangle.
+	//Allocate memory for bytes that hold Triangle and that will be copied to dev_tri_ptr
+	void* triangles = malloc((sizeof(Triangle)*numberoftris));
+	//copy from tri_list to triangles
+	memcpy(triangles, tri_list, sizeof(Triangle)*numberoftris);
+	//our trianglelist is a pointer to the first element in triangles (i.e. our triangles!)
+	Triangle* trianglelist = (Triangle*)triangles; 
+
 	for (int i = 0; i < numberoftris; i++){
 		trianglelist[i].v1 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
 		trianglelist[i].v2 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
 		trianglelist[i].v3 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
+		if (i % 100 == 0)
+			printf("Triangle made up of V1(%.2f, %.2f, %.2f), V2(%.2f, %.2f, %.2f), V3(%.2f, %.2f, %.2f)",
+			trianglelist[i].v1.x, trianglelist[i].v1.y, trianglelist[i].v1.z, trianglelist[i].v2.x, trianglelist[i].v2.y, trianglelist[i].v2.z,
+			trianglelist[i].v3.x, trianglelist[i].v3.y, trianglelist[i].v3.z);
 	}
 	printf("Loading mesh made of %d triangles for %d bytes\n", numberoftris, numberoftris*sizeof(Triangle));
 	//Note - This will over-write the other triangles stored at &dev_tri_ptr
@@ -229,6 +242,10 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 	delete[] trianglelist;
 }
 
+//This function copies the mesh from CUDA back to the CPU to look and make sure it loaded properly.
+__device__ void retrieve_mesh(Triangle *output, int numtris){
+	cudaMemcpy((void*)output, (void*)dev_tri_ptr, sizeof(Triangle)*numtris, cudaMemcpyDeviceToHost);	
+}
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris){
@@ -476,7 +493,8 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	loadSpheresToMemory(spheres, numspheres);
 	loadMeshToMemory(tri_list, numtris);
 	//loadTrisToMemory(tris, numtris);
-
+	check_mesh(numtris, 280, 300);
+/*
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
 
@@ -486,5 +504,5 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	cudaFree(out_dvc);
 
 	cudaDeviceSynchronize();
-
+*/
 }
