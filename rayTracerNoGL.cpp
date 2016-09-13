@@ -16,7 +16,7 @@
 #define YRES 240
 #endif
 #ifndef SAMPLES
-#define SAMPLES 1
+#define SAMPLES 128
 #endif
 
 //forward declarations
