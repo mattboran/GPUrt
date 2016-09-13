@@ -12,7 +12,7 @@
 #define XRES 320
 #define YRES 240
 
-#define SAMPLES 1
+#define SAMPLES 128
 
 //forward declarations
 uint hash(uint seed);
@@ -241,11 +241,11 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 	printf("Load of mesh success\n");
 	delete[] trianglelist;
 }
-
-//This function copies the mesh from CUDA back to the CPU to look and make sure it loaded properly.
-__device__ void retrieve_mesh(Triangle *output, int numtris){
-	cudaMemcpy((void*)output, (void*)dev_tri_ptr, sizeof(Triangle)*numtris, cudaMemcpyDeviceToHost);	
-}
+//
+////This function copies the mesh from CUDA back to the CPU to look and make sure it loaded properly.
+//__device__ void retrieve_mesh(Triangle *output, int numtris){
+//	cudaMemcpy((void*)output, (void*)dev_tri_ptr, sizeof(Triangle)*numtris, cudaMemcpyDeviceToHost);	
+//}
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris){
@@ -493,8 +493,8 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	loadSpheresToMemory(spheres, numspheres);
 	loadMeshToMemory(tri_list, numtris);
 	//loadTrisToMemory(tris, numtris);
-	check_mesh(numtris, 280, 300);
-/*
+	//check_mesh(numtris, 280, 300);
+
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
 
@@ -504,5 +504,5 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	cudaFree(out_dvc);
 
 	cudaDeviceSynchronize();
-*/
+
 }
