@@ -10,13 +10,13 @@
 #include <curand_kernel.h>
 
 #ifndef XRES
-#define XRES 320
+#define XRES 240
 #endif
 #ifndef YRES
-#define YRES 240
+#define YRES 160
 #endif
 #ifndef SAMPLES
-#define SAMPLES 128
+#define SAMPLES 16
 #endif
 
 //forward declarations
@@ -355,32 +355,6 @@ inline int toInt(float x){
 	return int(pow(clampf(x), 1 / 2.2) * 255 + .5);
 }
 //
-//inline bool TESTintersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris){
-//	//float n = sizeof(spheres) / sizeof(Sphere); //get number of spheres by memory size
-//	//float numspheres = sizeof(sphere_list) / sizeof(Sphere);
-//	//numspheres = 9;
-//	float tprime;
-//	float inf = 1e15f;
-//	t = inf; //initialize t to infinite distance
-//	for (int i = 0; i < numspheres; i++){//cycle through all spheres, until i<0
-//		if ((tprime = sphere_list[i].intersectSphere(r)) && tprime < t){//new intersection is closer than previous closest
-//			t = tprime;
-//			id = i; //store hit sphere by ID (array index)
-//		}
-//	}
-//	//0 through 8 for ID represent spheres 1 through 9
-//	//the next ID's correspond to triangles
-//	tprime = 0;
-//	for (int i = numspheres; i < numspheres + numtris; i++){
-//		if ((tprime = tri_list[i - numspheres].intersectTri(r)) && tprime < t){
-//			t = tprime;
-//			id = i;
-//		}
-//	}
-//	//if hit occured, t is > 0 and < inf.
-//	return t < inf;
-//}
-
 
 int main()
 {
@@ -393,7 +367,7 @@ int main()
 	float3 min = make_float3(-99999999.9f, -99999999.9f, -99999999.9f);
 	float3 max = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
 	float3 scale = make_float3(1, 1, 1);
-	float3 translate = make_float3(3, 3, 5);
+	float3 translate = make_float3(3, 1, 5);
 	char* filename = "teapot.obj";
 	std::cout << filename << " being loaded. \n\n";
 	bool has_uvs = false;

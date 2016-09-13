@@ -9,19 +9,16 @@
 
 #define M_PI 3.14159265359f
 #define EPSILON 0.00001f
-#define XRES 320
-#define YRES 240
+#define XRES 240
+#define YRES 160
 
-#define SAMPLES 128
+#define SAMPLES 16
 
 //forward declarations
 uint hash(uint seed);
 
 //3 types of materials used in the radiance() function. 
 enum Refl_t { DIFF, SPEC, REFR };
-//3 types of geometry to be treated during radiance function. This causes big fork
-enum Geom_t { SPH, TRI, BOX };
-
 
 //This is the core of the program, hence ray-tracer
 struct Ray{
@@ -29,7 +26,6 @@ struct Ray{
 	float3 dir;
 	//construct on gpu
 	__device__ Ray(float3 o, float3 d) : origin(o), dir(d) { }
-	
 };
 
 //This is a model of the camera that is used to generate rays through the viewing plane. We use the left-hand-pointing
@@ -225,15 +221,18 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 	Triangle* trianglelist = (Triangle*)triangles; 
 
 	for (int i = 0; i < numberoftris; i++){
-		trianglelist[i].v1 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
-		trianglelist[i].v2 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
-		trianglelist[i].v3 = make_float3(tri_list[i].v1.w, tri_list[i].v1.x, tri_list[i].v1.y);
+		trianglelist[i].v1 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
+		trianglelist[i].v2 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
+		trianglelist[i].v3 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
+		trianglelist[i].col = make_float3(0.9, 0.4, 0.4);
+		trianglelist[i].emit = make_float3(0, 0, 0);
+		trianglelist[i].refl = DIFF;
 		if (i % 100 == 0)
-			printf("Triangle made up of V1(%.2f, %.2f, %.2f), V2(%.2f, %.2f, %.2f), V3(%.2f, %.2f, %.2f)",
+			printf("Triangle made up of V1(%.2f, %.2f, %.2f), V2(%.2f, %.2f, %.2f), V3(%.2f, %.2f, %.2f)\nwith color %.2f %.2f %.2f",
 			trianglelist[i].v1.x, trianglelist[i].v1.y, trianglelist[i].v1.z, trianglelist[i].v2.x, trianglelist[i].v2.y, trianglelist[i].v2.z,
-			trianglelist[i].v3.x, trianglelist[i].v3.y, trianglelist[i].v3.z);
+			trianglelist[i].v3.x, trianglelist[i].v3.y, trianglelist[i].v3.z, trianglelist[i].col.x, trianglelist[i].col.y, trianglelist[i].col.z);
 	}
-	printf("Loading mesh made of %d triangles for %d bytes\n", numberoftris, numberoftris*sizeof(Triangle));
+	printf("Loading mesh made of %d triangles for %d bytes\n\n", numberoftris, numberoftris*sizeof(Triangle));
 	//Note - This will over-write the other triangles stored at &dev_tri_ptr
 	size_t numtris = numberoftris * sizeof(Triangle);
 	cudaMalloc((void**)&dev_tri_ptr, numtris);
@@ -265,30 +264,17 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//the next ID's correspond to triangles
 
 	for (int i = 0; i < numtris; i++){
+		//if (i == 500)
+		//	printf("Testing intersect v1 = (%.2f, %.2f, %.2f)", tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
 		if ((tprime = tri_list[i].intersectTri(r)) && tprime < t){
+			printf("Hit!!!\n\n\n");
 			t = tprime;
 			id = i + numspheres;
-
 		}
 	}
 	//if hit occured, t is > 0 and < inf.
 	return t < inf;
 }
-
-//this method was used to test the use of triangles when first implemented
-__device__ bool testIntersect(const Ray &r, Triangle* tri_list, int numtris, Sphere* spr_list, int numspheres){
-//	float tprime;
-	//float inf = 1e15f;
-	////float t = inf;
-	//for (int i = 0; i < numtris; i++){
-	//	if (tri_list[i].intersectTri(r) > 0.0f)
-	//		return true;
-	//}
-	if (spr_list[0].intersectSphere(r) > 0.f)
-		return true;
-	return false;
-}
-
 
 //This function returns the largest value of x y and z from a float3
 __device__ inline float getMax(float3 f){
@@ -497,7 +483,7 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
-
+	printf("%d number of triangles\n", numtris);
 	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris);
 
 	cudaMemcpy(out_host, out_dvc, XRES * YRES * sizeof(float3), cudaMemcpyDeviceToHost);
