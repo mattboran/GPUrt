@@ -10,17 +10,17 @@
 #include <curand_kernel.h>
 
 #ifndef XRES
-#define XRES 320
+#define XRES 240
 #endif
 #ifndef YRES
-#define YRES 240
+#define YRES 160
 #endif
 #ifndef SAMPLES
-#define SAMPLES 256
+#define SAMPLES 32
 #endif
 
 //forward declarations
-extern void renderKernelWrapper(float3 *out_host, int numspheres, loadingTriangle* tri_list, int numtris);
+extern void renderKernelWrapper(float3 *out_host, int numspheres, loadingTriangle* tri_list, int numtris, const float3& min, const float3& max);
 extern void testKernelWrapper(float *out_host);
 extern void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris);
 void check_mesh(int numberoftris, int check_from, int check_to);
@@ -364,6 +364,7 @@ int main()
 	std::vector<float2> uv_list;
 	std::vector<unsigned int> f_indices, uv_indices;
 	std::vector<loadingTriangle> triangle_list;
+
 	float3 min = make_float3(-99999999.9f, -99999999.9f, -99999999.9f);
 	float3 max = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
 	float3 scale = make_float3(1, 1, 1);
@@ -371,11 +372,11 @@ int main()
 	char* filename = "teapot.obj";
 	std::cout << filename << " being loaded. \n\n";
 	bool has_uvs = false;
-
 	int numtris = loadOBJ(filename, vertex_list, normal_list, uv_list, f_indices, uv_indices, has_uvs);
-	has_uvs = false;
-	if (numtris == populateTriangles(vertex_list, uv_list, f_indices, uv_indices, triangle_list, min, max, translate, scale, has_uvs)){
+
+	if (numtris == populateTriangles(vertex_list, uv_list, f_indices, uv_indices, triangle_list, min, max, translate, scale, has_uvs=false)){
 		std::cout << "Successfully loaded " << filename << " with " << numtris << " triangles\n";
+		printf("Bounding box min (%.2f, %.2f, %.2f)\nmax(%.2f, %.2f, %.2f)\n", min.x, min.y, min.z, max.x, max.y, max.z);
 	}
 	else{
 		std::cout << "Failed loading " << filename << "\n";
@@ -395,7 +396,7 @@ int main()
 	//schedule GPU threads and launch kernel from host CPU
 	float3* out_host = new float3[XRES*YRES];
 
-	renderKernelWrapper(out_host, 8, &triangle_list[0], triangle_list.size());
+	renderKernelWrapper(out_host, 8, &triangle_list[0], triangle_list.size(), min, max);
 
 	cudaEventRecord(stop);
 	cudaDeviceSynchronize();
