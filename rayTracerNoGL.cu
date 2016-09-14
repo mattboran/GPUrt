@@ -182,6 +182,8 @@ struct Triangle{
 //These are the device sphere and triangle pointers. 
 Sphere *dev_sphere_ptr;
 Triangle *dev_tri_ptr;
+//These two variables are the device pointers to min and max of AABB
+float3 *dev_min_ptr, *dev_max_ptr;
 
 //These numbers come directly from smallPT
 //had to scale everything down by a factor of 10 to reduce artifacts.
@@ -249,32 +251,73 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 	cudaMalloc((void**)&dev_tri_ptr, numtris);
 	cudaMemcpy(dev_tri_ptr, &trianglelist[0], numtris, cudaMemcpyHostToDevice);
 	printf("Load of mesh onto device DRAM success\n");
-	//delete[] trianglelist;
+	delete[] trianglelist;
+}
+
+//this function loads the AABB to dev_min_ptr and dev_max_ptr
+//with the bytes of data at &min and &max. 
+void loadAABBtoMemory(const float3 &min, const float3 &max){
+	printf("Loading AABB to device DRAM - %d bytes\n", 2 * sizeof(float3));
+	cudaMalloc((void**)&dev_min_ptr, sizeof(float3));
+	cudaMemcpy(dev_min_ptr, &min, sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&dev_max_ptr, sizeof(float3));
+	cudaMemcpy(dev_max_ptr, &max, sizeof(float3), cudaMemcpyHostToDevice);
+	printf("min = (%.2f, %.2f, %.2f), max=(%.2f, %.2f, %.2f)\n", min.x, min.y, min.z, max.x, max.y, max.z);
 }
 
 //this function is added to make syntax of intersectScene easier. It is inlined.
 //this tests intersection of Ray r and AABB defined by float3's min and max
-__device__ inline bool intersectAABB(const Ray &r, const float3 &min, const float3 &max){
-	float3 n_inv = 1 / r.dir;
-	float tx1 = (min.x - r.origin.x) * n_inv.x;
-	float tx2 = (max.x - r.origin.x) * n_inv.x;
+__device__ inline bool intersectAABB(const Ray &r,float3 &min,float3& max){
+	float3 invdir = make_float3(1.f / r.dir.x, 1.f / r.dir.y, 1.f / r.dir.z);
+	float tmin = (min.x - r.origin.x) * invdir.x;
+	float tmax = (max.x - r.origin.x) * invdir.x;
 
-	float tmin = fminf(tx1, tx2);
-	float tmax = fmaxf(tx1, tx2);
+	if (tmin > tmax){
+		float temp = tmax;
+		tmax = tmin;
+		tmin = temp;
+	}
 
-	float ty1 = (min.y - r.origin.y)*n_inv.y;
-	float ty2 = (max.y - r.origin.y)*n_inv.y;
+	float tymin = (min.y - r.origin.y) * invdir.y;
+	float tymax = (max.y - r.origin.y) * invdir.y;
 
-	tmin = fmaxf(tmin, fminf(ty1, ty2));
-	tmax = fminf(tmax, fmaxf(ty1, ty2));
+	if (tymin > tymax){
+		float temp = tymax;
+		tymax = tymin;
+		tymin = temp;
+	}
+	if ((tmin > tymax) || (tymin > tmax))
+		return false;
 
-	return tmax >= tmin;
+	if (tymin > tmin)
+		tmin = tmin;
+
+	if (tymax < tmax)
+		tmax = tymax;
+
+	float tzmin = (min.z - r.origin.z) * invdir.z;
+	float tzmax = (max.z - r.origin.z) * invdir.z;
+
+	if (tzmin > tzmax){
+		float temp = tzmax;
+		tzmax = tzmin;
+		tzmin = temp;
+	}
+
+	if ((tmin > tzmax) || (tzmin > tmax))
+		return false;
+
+	if (tzmin > tmin)
+		tmin = tzmin;
+
+	if (tzmax < tmax)
+		tmax = tzmax;
+
+	return true;
 }
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
-__device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris, const float3& min, const float3 &max){
-	const bool use_AABB = true;
-	printf("intersecting scene \n");
+__device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris, float3 &min, float3 &max){
 	float tprime;
 	float inf = 1e15f;
 	t = inf; //initialize t to infinite distance
@@ -287,17 +330,9 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//0 through 8 for ID represent spheres 1 through 9
 	//the next ID's correspond to triangles
 	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max
-	if (intersectAABB(r, min, max) && use_AABB){
+	
+	if (intersectAABB(r, min, max)){
 		for (int i = 0; i < numtris; i++){//this could be inlined, to make it easier to add multiple meshes
-			tprime = tri_list[i].intersectTri(r);
-			if ((tprime = tri_list[i].intersectTri(r)) && tprime < t){
-				t = tprime;
-				id = i + numspheres;
-			}
-		}
-	}
-	else{
-		for (int i = 0; i < numtris; i++){
 			tprime = tri_list[i].intersectTri(r);
 			if ((tprime = tri_list[i].intersectTri(r)) && tprime < t){
 				t = tprime;
@@ -325,7 +360,7 @@ __device__ inline float getMax(float3 f){
 //by reflectence function of material, weighted by cosine incidence angle (Lambert's cosine law)
 //Inputs: ray to calculate radiance along, and seeds for random num generation.
 //Output: color at point.
-__device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, Triangle *tri_list, int numtris, const float3& min, const float3 &max){
+__device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, Triangle *tri_list, int numtris, float3* min, const float3 &max){
 	float3 accumulated = make_float3(0.f, 0.f, 0.f); //accumulated ray color for each iteration of loop
 	float3 mask = make_float3(1.f, 1.f, 1.f);
 	int numspheres = 9;
@@ -472,7 +507,7 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 
 //this is the main rendering kernel that can be called from the CPU, runs in parallel on CUDA threads.
 //each pixel runs in parallel
-__global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphere_list, Triangle *tri_list, int numtris, const float3& min, const float3 &max){
+__global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphere_list, Triangle *tri_list, int numtris, float3* min, const float3 &max){
 	//assign thread to every pixel
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -500,18 +535,19 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 }
 
 //this wrapper function is used when the cpp main file calls the render kernel
-void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris, const float3 &min, const float3 &max){
+void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris, const float3 &min,float3* max){
 	float3* out_dvc;
 
 	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
 
 	loadSpheresToMemory(spheres, numspheres);
 	loadMeshToMemory(tri_list, numtris);
+	loadAABBtoMemory(min, max);
 	
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
 	printf("%d number of triangles\n", numtris);
-	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris,min, max);
+	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris,dev_min_ptr, dev_max_ptr);
 
 	cudaMemcpy(out_host, out_dvc, XRES * YRES * sizeof(float3), cudaMemcpyDeviceToHost);
 	cudaFree(out_dvc);
