@@ -10,13 +10,13 @@
 #include <curand_kernel.h>
 
 #ifndef XRES
-#define XRES 240
+#define XRES 320
 #endif
 #ifndef YRES
-#define YRES 160
+#define YRES 240
 #endif
 #ifndef SAMPLES
-#define SAMPLES 16
+#define SAMPLES 256
 #endif
 
 //forward declarations
@@ -395,7 +395,7 @@ int main()
 	//schedule GPU threads and launch kernel from host CPU
 	float3* out_host = new float3[XRES*YRES];
 
-	renderKernelWrapper(out_host, 9, &triangle_list[0], triangle_list.size());
+	renderKernelWrapper(out_host, 7, &triangle_list[0], triangle_list.size());
 
 	cudaEventRecord(stop);
 	cudaDeviceSynchronize();

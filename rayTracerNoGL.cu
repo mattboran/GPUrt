@@ -9,10 +9,10 @@
 
 #define M_PI 3.14159265359f
 #define EPSILON 0.00001f
-#define XRES 240
-#define YRES 160
+#define XRES 320
+#define YRES 240
 
-#define SAMPLES 16
+#define SAMPLES 256
 
 //forward declarations
 uint hash(uint seed);
@@ -195,8 +195,8 @@ Sphere spheres[] = {
 	{ 1e3f, { 5.00f, 4.08f, -1e4f + 60.00f }, { 0.0f, 0.0f, 0.0f }, { 1.00f, 1.00f, 1.00f }, DIFF }, //Front 
 	{ 1e4f, { 5.00f, 1e4f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Bottom 
 	{ 1e4f, { 5.00f, -1e4f + 8.16f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Top 
-	{ 1.65f, { 2.70f, 1.65f, 4.70f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, SPEC }, // small sphere 1
-	{ 1.65f, { 7.30f, 1.65f, 7.80f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, REFR }, // small sphere 2
+	//{ 1.65f, { 2.70f, 1.65f, 4.70f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, SPEC }, // small sphere 1
+	//{ 1.65f, { 7.30f, 1.65f, 7.80f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, REFR }, // small sphere 2
 	{ 60.0f, { 5.00f, 68.16f - .05f, 8.16f }, { 2.0f, 1.8f, 1.6f }, { 0.0f, 0.0f, 0.0f }, DIFF }  // Light
 };
 
@@ -239,7 +239,7 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 		trianglelist[i].v1 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
 		trianglelist[i].v2 = make_float3(tri_list[i].v2.x, tri_list[i].v2.y, tri_list[i].v2.z);
 		trianglelist[i].v3 = make_float3(tri_list[i].v3.x, tri_list[i].v3.y, tri_list[i].v3.z);
-		trianglelist[i].col = make_float3(0.9, 0.4, 0.4);
+		trianglelist[i].col = make_float3(0.9, 0.2, 0.2);
 		trianglelist[i].emit = make_float3(0, 0, 0);
 		trianglelist[i].refl = DIFF;
 	}
@@ -330,10 +330,6 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 		float t; //distance to hitt
 		int id = 0; //index of hit 
 		float3 d; //next ray direction
-
-		//hitobj_color = make_float3(0, 0, 0);
-		//hitobj_emit = make_float3(0, 0, 0);
-		
 
 		if (!intersectScene(r, t, id, sphere_list, numspheres, tri_list, numtris))
 			return make_float3(0.f, 0.f, 0.f); //return background color of 0 if no hit
