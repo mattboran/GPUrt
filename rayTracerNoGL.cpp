@@ -367,7 +367,7 @@ int main()
 	float3 min = make_float3(-99999999.9f, -99999999.9f, -99999999.9f);
 	float3 max = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
 	float3 scale = make_float3(1, 1, 1);
-	float3 translate = make_float3(3, 1, 5);
+	float3 translate = make_float3(5, 1.25, 5);
 	char* filename = "teapot.obj";
 	std::cout << filename << " being loaded. \n\n";
 	bool has_uvs = false;
@@ -395,7 +395,7 @@ int main()
 	//schedule GPU threads and launch kernel from host CPU
 	float3* out_host = new float3[XRES*YRES];
 
-	renderKernelWrapper(out_host, 7, &triangle_list[0], triangle_list.size());
+	renderKernelWrapper(out_host, 8, &triangle_list[0], triangle_list.size());
 
 	cudaEventRecord(stop);
 	cudaDeviceSynchronize();
