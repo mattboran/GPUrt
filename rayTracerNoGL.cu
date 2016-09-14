@@ -26,6 +26,12 @@ struct Ray{
 	float3 dir;
 	//construct on gpu
 	__device__ Ray(float3 o, float3 d) : origin(o), dir(d) { }
+	//debugging - this method prints the info about the ray to console
+	__device__ void print_info(){
+		printf("Ray composed of Origin and Direction.\n");
+		printf("Origin = (%.2f, %.2f, %.2f)\n", origin.x, origin.y, origin.z);
+		printf("Dir = (%.2f, %.2f, %.2f)\n", dir.x, dir.y, dir.z);
+	}
 };
 
 //This is a model of the camera that is used to generate rays through the viewing plane. We use the left-hand-pointing
@@ -125,7 +131,6 @@ struct Triangle{
 		float3 edge1, edge2;
 		float3 P, Q, T;
 		float det, inv_det, u, v, t;
-
 		edge1 = v2 - v1;
 		edge2 = v3 - v1;
 
@@ -162,6 +167,16 @@ struct Triangle{
 		float3 edge2 = v3 - v1;
 		return cross(edge1, edge2);
 	}
+
+	//this method is used for debugging memory. It prints the info about the triangle to console.
+	__device__ void print_info(){
+		printf("Trignale made up of V1, V2, V3, Color, Emit, and REFL_T\n");
+		printf("V1 = (%.2f, %.2f, %.2f)\n", v1.x, v1.y, v1.z);
+		printf("V2 = (%.2f, %.2f, %.2f)\n", v2.x, v2.y, v2.z);
+		printf("V3 = (%.2f, %.2f, %.2f)\n", v3.x, v3.y, v3.z);
+		printf("Color = (%.2f, %.2f, %.2f)\n", col.x, col.y, col.z);
+		//printf("Emit = (%.2f, %.2f, %.2f)\n\n", emit.x, emit.y, emit.z);
+	}
 };
 
 
@@ -175,7 +190,7 @@ Triangle *dev_tri_ptr;
 //spheres and triangles will eventually be moved to the .cpp file, and used through
 //pointers in the .cu file
 Sphere spheres[] = {
-	{ 1e4f, { 1e4f + .10f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { 0.75f, 0.25f, 0.25f }, DIFF }, //Left 
+	{ 1e4f, { 1e4f + .10f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { 0.25f, 0.75f, 0.25f }, DIFF }, //Left 
 	{ 1e4f, { -1e4f + 9.90f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .25f, .25f, .75f }, DIFF }, //Right 
 	{ 1e4f, { 5.00f, 4.08f, 1e4f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Back 
 	{ 1e3f, { 5.00f, 4.08f, -1e4f + 60.00f }, { 0.0f, 0.0f, 0.0f }, { 1.00f, 1.00f, 1.00f }, DIFF }, //Front 
@@ -219,32 +234,24 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 	memcpy(triangles, tri_list, sizeof(Triangle)*numberoftris);
 	//our trianglelist is a pointer to the first element in triangles (i.e. our triangles!)
 	Triangle* trianglelist = (Triangle*)triangles; 
-
+	//This copies element by element from loadingTriangle into Triangle. It adds col, emit, and refl_t as hard-coded value. Eventally, this will be read
+	//from .matl files. 
 	for (int i = 0; i < numberoftris; i++){
 		trianglelist[i].v1 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
-		trianglelist[i].v2 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
-		trianglelist[i].v3 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
+		trianglelist[i].v2 = make_float3(tri_list[i].v2.x, tri_list[i].v2.y, tri_list[i].v2.z);
+		trianglelist[i].v3 = make_float3(tri_list[i].v3.x, tri_list[i].v3.y, tri_list[i].v3.z);
 		trianglelist[i].col = make_float3(0.9, 0.4, 0.4);
 		trianglelist[i].emit = make_float3(0, 0, 0);
 		trianglelist[i].refl = DIFF;
-		if (i % 100 == 0)
-			printf("Triangle made up of V1(%.2f, %.2f, %.2f), V2(%.2f, %.2f, %.2f), V3(%.2f, %.2f, %.2f)\nwith color %.2f %.2f %.2f",
-			trianglelist[i].v1.x, trianglelist[i].v1.y, trianglelist[i].v1.z, trianglelist[i].v2.x, trianglelist[i].v2.y, trianglelist[i].v2.z,
-			trianglelist[i].v3.x, trianglelist[i].v3.y, trianglelist[i].v3.z, trianglelist[i].col.x, trianglelist[i].col.y, trianglelist[i].col.z);
 	}
 	printf("Loading mesh made of %d triangles for %d bytes\n\n", numberoftris, numberoftris*sizeof(Triangle));
 	//Note - This will over-write the other triangles stored at &dev_tri_ptr
 	size_t numtris = numberoftris * sizeof(Triangle);
 	cudaMalloc((void**)&dev_tri_ptr, numtris);
 	cudaMemcpy(dev_tri_ptr, &trianglelist[0], numtris, cudaMemcpyHostToDevice);
-	printf("Load of mesh success\n");
-	delete[] trianglelist;
+	printf("Load of mesh onto device DRAM success\n");
+	//delete[] trianglelist;
 }
-//
-////This function copies the mesh from CUDA back to the CPU to look and make sure it loaded properly.
-//__device__ void retrieve_mesh(Triangle *output, int numtris){
-//	cudaMemcpy((void*)output, (void*)dev_tri_ptr, sizeof(Triangle)*numtris, cudaMemcpyDeviceToHost);	
-//}
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris){
@@ -264,8 +271,15 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//the next ID's correspond to triangles
 
 	for (int i = 0; i < numtris; i++){
-		//if (i == 500)
-		//	printf("Testing intersect v1 = (%.2f, %.2f, %.2f)", tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
+		tprime = tri_list[i].intersectTri(r);
+		
+		/*if (i == 500){
+			
+			printf("Testing intersect v1 = (%.2f, %.2f, %.2f)", tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
+			printf("Ray origin = %.2f, %.2f, %.2f\n", r.origin.x, r.origin.y, r.origin.z);
+			printf("Ray direction = %.2f, %.2f, %.2f\n", r.dir.x, r.dir.y, r.dir.z);
+			printf("tprime = %.2f\n", tprime);
+		}*/
 		if ((tprime = tri_list[i].intersectTri(r)) && tprime < t){
 			printf("Hit!!!\n\n\n");
 			t = tprime;
@@ -276,6 +290,12 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	return t < inf;
 }
 
+//this method checks the content of dev_tri_ptr.
+__device__ void check_tri_ptr(Triangle* tri_list, int numtris, int start, int end){
+	for (int i = start; i < end && i < numtris; i++){
+		tri_list[i].print_info();
+	}
+}
 //This function returns the largest value of x y and z from a float3
 __device__ inline float getMax(float3 f){
 	if (f.x > f.y)
@@ -445,6 +465,7 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 //each pixel runs in parallel
 __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphere_list, Triangle *tri_list, int numtris){
 	//assign thread to every pixel
+	//check_tri_ptr(tri_list, 6480, 100, 102);
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -480,7 +501,7 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	loadMeshToMemory(tri_list, numtris);
 	//loadTrisToMemory(tris, numtris);
 	//check_mesh(numtris, 280, 300);
-
+	
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
 	printf("%d number of triangles\n", numtris);
