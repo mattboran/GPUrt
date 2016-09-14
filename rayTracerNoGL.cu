@@ -175,7 +175,6 @@ struct Triangle{
 		printf("V2 = (%.2f, %.2f, %.2f)\n", v2.x, v2.y, v2.z);
 		printf("V3 = (%.2f, %.2f, %.2f)\n", v3.x, v3.y, v3.z);
 		printf("Color = (%.2f, %.2f, %.2f)\n", col.x, col.y, col.z);
-		//printf("Emit = (%.2f, %.2f, %.2f)\n\n", emit.x, emit.y, emit.z);
 	}
 };
 
@@ -281,7 +280,6 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 			printf("tprime = %.2f\n", tprime);
 		}*/
 		if ((tprime = tri_list[i].intersectTri(r)) && tprime < t){
-			printf("Hit!!!\n\n\n");
 			t = tprime;
 			id = i + numspheres;
 		}
@@ -499,8 +497,6 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 
 	loadSpheresToMemory(spheres, numspheres);
 	loadMeshToMemory(tri_list, numtris);
-	//loadTrisToMemory(tris, numtris);
-	//check_mesh(numtris, 280, 300);
 	
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
