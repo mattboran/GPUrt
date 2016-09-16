@@ -12,7 +12,7 @@
 #define XRES 320
 #define YRES 240
 
-#define SAMPLES 256
+#define SAMPLES 128
 
 //forward declarations
 uint hash(uint seed);

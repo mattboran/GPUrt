@@ -16,7 +16,7 @@
 #define YRES 240
 #endif
 #ifndef SAMPLES
-#define SAMPLES 256
+#define SAMPLES 128
 #endif
 
 //forward declarations
@@ -368,7 +368,7 @@ int main()
 	float3 max = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
 	float3 scale = make_float3(1, 1, 1);
 	float3 translate = make_float3(5, 1.25, 5);
-	char* filename = "teapot.obj";
+	char* filename = "teapot2.obj";
 	std::cout << filename << " being loaded. \n\n";
 	bool has_uvs = false;
 
