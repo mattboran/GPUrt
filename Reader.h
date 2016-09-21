@@ -17,4 +17,26 @@ struct loadingTriangle{
 		v3 = make_float3(_v3.x, _v3.y, _v3.z);
 	}
 };
+
+//clamp a float on [0, 1]
+inline float clampf(float x){
+	return x < 0.f ? 0.f : x > 1.f ? 1.f : x;
+}
+//this function converts a float on [0.f, 1.f] to int on [0, 255], gamma-corrected by sqrt 2.2 (standard)
+inline int toInt(float x){
+	return int(pow(clampf(x), 1 / 2.2) * 255 + .5);
+}
+
+__device__ inline float max_float(float a, float b){
+	if (a > b){
+		return a;
+	}
+	return b;
+}
+__device__ inline float min_float(float a, float b){
+	if (a < b){
+		return a;
+	}
+	return b;
+}
 #endif

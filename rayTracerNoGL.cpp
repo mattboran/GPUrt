@@ -16,14 +16,17 @@
 #define YRES 160
 #endif
 #ifndef SAMPLES
-#define SAMPLES 32
+#define SAMPLES 1
 #endif
 
 //forward declarations
-extern void renderKernelWrapper(float3 *out_host, int numspheres, loadingTriangle* tri_list, int numtris, const float3& min, const float3& max);
+extern void renderKernelWrapper(float3 *out_host, int numspheres, loadingTriangle* tri_list, int numtris,float3& min, float3& max);
 extern void testKernelWrapper(float *out_host);
 extern void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris);
 void check_mesh(int numberoftris, int check_from, int check_to);
+inline float clampf(float x);
+inline int toInt(float x);
+uint hash(uint seed);
 
 struct Sphere;
 struct Ray;
@@ -332,29 +335,6 @@ int populateTriangles(const std::vector<float3> &vertex_list, const std::vector<
 	}
 	return tris.size();
 }
-
-//hashing function to get seed for curandDevice
-//this fast hash method was developed by Thomas Wang
-//this is used to re-seed curand every sample
-uint hash(uint seed){
-	seed = (seed ^ 61) ^ (seed >> 16);
-	seed *= 9;
-	seed = seed ^ (seed >> 4);
-	seed *= 0x27d4eb2d;
-	seed = seed ^ (seed >> 15);
-	return seed;
-}
-
-//clamp a float on [0, 1]
-inline float clampf(float x){
-	return x < 0.f ? 0.f : x > 1.f ? 1.f : x;
-}
-
-//this function converts a float on [0.f, 1.f] to int on [0, 255], gamma-corrected by sqrt 2.2 (standard)
-inline int toInt(float x){
-	return int(pow(clampf(x), 1 / 2.2) * 255 + .5);
-}
-//
 
 int main()
 {

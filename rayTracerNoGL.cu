@@ -12,10 +12,10 @@
 #define XRES 240
 #define YRES 160
 
-#define SAMPLES 32
+#define SAMPLES 1
 
 //forward declarations
-uint hash(uint seed);
+//uint hash(uint seed);
 
 //3 types of materials used in the radiance() function. 
 enum Refl_t { DIFF, SPEC, REFR };
@@ -183,7 +183,8 @@ struct Triangle{
 Sphere *dev_sphere_ptr;
 Triangle *dev_tri_ptr;
 //These two variables are the device pointers to min and max of AABB
-float3 *dev_min_ptr, *dev_max_ptr;
+float3 dev_min_ptr;
+float3 dev_max_ptr;
 
 //These numbers come directly from smallPT
 //had to scale everything down by a factor of 10 to reduce artifacts.
@@ -256,12 +257,13 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 
 //this function loads the AABB to dev_min_ptr and dev_max_ptr
 //with the bytes of data at &min and &max. 
+//This cude is CLUSTERFUCKed. Casts on casts on casts 
 void loadAABBtoMemory(const float3 &min, const float3 &max){
 	printf("Loading AABB to device DRAM - %d bytes\n", 2 * sizeof(float3));
 	cudaMalloc((void**)&dev_min_ptr, sizeof(float3));
-	cudaMemcpy(dev_min_ptr, &min, sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMemcpy((void*)&dev_min_ptr, &min, sizeof(float3), cudaMemcpyHostToDevice);
 	cudaMalloc((void**)&dev_max_ptr, sizeof(float3));
-	cudaMemcpy(dev_max_ptr, &max, sizeof(float3), cudaMemcpyHostToDevice);
+	cudaMemcpy((void*)&dev_max_ptr, &max, sizeof(float3), cudaMemcpyHostToDevice);
 	printf("min = (%.2f, %.2f, %.2f), max=(%.2f, %.2f, %.2f)\n", min.x, min.y, min.z, max.x, max.y, max.z);
 }
 
@@ -316,6 +318,51 @@ __device__ inline bool intersectAABB(const Ray &r,float3 &min,float3& max){
 	return true;
 }
 
+__device__ inline bool intersectBoundingBox(const Ray &r, float3 &min, float3& max){
+	float3 invdir = make_float3(1.f / r.dir.x, 1.f / r.dir.y, 1.f / r.dir.z);
+	//printf("R.dir = (%.2f, %.2f, %.2f)\n", r.dir.x, r.dir.y, r.dir.z);
+	//printf("length of dir = %.2f", sqrtf(r.dir.x*r.dir.x + r.dir.y*r.dir.y + r.dir.z*r.dir.z));
+	//printf("Device min = (%.2f, %.2f, %.2f)\n", min.x, min.y, min.z);
+	//printf("Device max = (%.2f, %.2f, %.2f)\n", min.x, min.y, min.z);
+	
+	float t1 = (min.x - r.origin.x) * invdir.x;
+	float t2 = (max.x - r.origin.x) * invdir.x;
+	float t3 = (min.y - r.origin.y) * invdir.y;
+	float t4 = (max.y - r.origin.y) * invdir.y;
+	float t5 = (min.z - r.origin.z) * invdir.z;
+	float t6 = (max.z - r.origin.z) * invdir.z;
+
+	float tmin = max_float(max_float(min_float(t1, t2),min_float(t3, t4)), min_float(t5, t6));
+	float tmax = min_float(min_float(max_float(t1, t2), max_float(t3, t4)), max_float(t5, t6));
+	printf("Tmin = %.2f           Tmax = %.2f", tmin, tmax);
+	//if tmax < 0, ray intersects AABB but in the inverse direction (i.e. it's behind us)
+	if (tmax < 0)
+	{
+		//t = tmax;
+		return false;
+	}
+
+	//if tmin  > tmax, ray doesn't intersect AABB
+	if (tmin > tmax)
+	{
+		//t = tmax;
+		return false;
+	}
+	//t = tmin;
+	return true;
+}
+//This function is an inline implementation that intersects a list of triangles - tri_list . This intersect method goes through the device constant memory where
+//the mesh is stored. It returns true if the ray intersects this entire mesh at all. 
+__device__ inline void intersectListOfTriangles(const Ray &r, float &t, int &id, Triangle* tri_list, int numtris, int numspheres){
+	float tprime = 1e15;
+	for (int i = 0; i < numtris; i++){
+		if ((tprime = tri_list[i].intersectTri(r)) && tprime < t){
+			t = tprime;
+			id = i + numspheres;
+		}
+	}
+}
+
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris, float3 &min, float3 &max){
 	float tprime;
@@ -331,15 +378,18 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//the next ID's correspond to triangles
 	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max
 	
-	if (intersectAABB(r, min, max)){
-		for (int i = 0; i < numtris; i++){//this could be inlined, to make it easier to add multiple meshes
-			tprime = tri_list[i].intersectTri(r);
-			if ((tprime = tri_list[i].intersectTri(r)) && tprime < t){
-				t = tprime;
-				id = i + numspheres;
-			}
+	bool use_AABB = true;
+	//this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
+	if (use_AABB){
+		if (intersectBoundingBox(r, min, max)){
+			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
 		}
 	}
+	//
+	else{
+		intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
+	}
+
 	//if hit occured, t is > 0 and < inf.
 	return t < inf;
 }
@@ -360,7 +410,7 @@ __device__ inline float getMax(float3 f){
 //by reflectence function of material, weighted by cosine incidence angle (Lambert's cosine law)
 //Inputs: ray to calculate radiance along, and seeds for random num generation.
 //Output: color at point.
-__device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, Triangle *tri_list, int numtris, float3* min, const float3 &max){
+__device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, Triangle *tri_list, int numtris, float3 &min, float3 &max){
 	float3 accumulated = make_float3(0.f, 0.f, 0.f); //accumulated ray color for each iteration of loop
 	float3 mask = make_float3(1.f, 1.f, 1.f);
 	int numspheres = 9;
@@ -504,10 +554,20 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 	return accumulated;
 }
 
-
+//hashing function to get seed for curandDevice
+//this fast hash method was developed by Thomas Wang
+//this is used to re-seed curand every sample
+uint hash(uint seed){
+	seed = (seed ^ 61) ^ (seed >> 16);
+	seed *= 9;
+	seed = seed ^ (seed >> 4);
+	seed *= 0x27d4eb2d;
+	seed = seed ^ (seed >> 15);
+	return seed;
+}
 //this is the main rendering kernel that can be called from the CPU, runs in parallel on CUDA threads.
 //each pixel runs in parallel
-__global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphere_list, Triangle *tri_list, int numtris, float3* min, const float3 &max){
+__global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphere_list, Triangle *tri_list, int numtris, float3 &min, float3 &max){
 	//assign thread to every pixel
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -535,7 +595,7 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 }
 
 //this wrapper function is used when the cpp main file calls the render kernel
-void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris, const float3 &min,float3* max){
+void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris,float3 &min,float3 &max){
 	float3* out_dvc;
 
 	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
@@ -547,7 +607,7 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
 	printf("%d number of triangles\n", numtris);
-	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris,dev_min_ptr, dev_max_ptr);
+	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris, dev_min_ptr, dev_max_ptr);
 
 	cudaMemcpy(out_host, out_dvc, XRES * YRES * sizeof(float3), cudaMemcpyDeviceToHost);
 	cudaFree(out_dvc);
