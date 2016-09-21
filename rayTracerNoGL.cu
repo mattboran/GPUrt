@@ -185,6 +185,7 @@ Triangle *dev_tri_ptr;
 //These two variables are the device pointers to min and max of AABB
 float3 dev_min_ptr;
 float3 dev_max_ptr;
+float3 *dev_AABB_ptr;
 
 //These numbers come directly from smallPT
 //had to scale everything down by a factor of 10 to reduce artifacts.
@@ -258,13 +259,15 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 //this function loads the AABB to dev_min_ptr and dev_max_ptr
 //with the bytes of data at &min and &max. 
 //This cude is CLUSTERFUCKed. Casts on casts on casts 
-void loadAABBtoMemory(const float3 &min, const float3 &max){
+void loadAABBtoMemory(float3 *AABB){
 	printf("Loading AABB to device DRAM - %d bytes\n", 2 * sizeof(float3));
-	cudaMalloc((void**)&dev_min_ptr, sizeof(float3));
-	cudaMemcpy((void*)&dev_min_ptr, &min, sizeof(float3), cudaMemcpyHostToDevice);
+	/*cudaMalloc((void**)&dev_min_ptr, sizeof(float3));
+	cudaMemcpy(dev_min_ptr, &min, sizeof(float3), cudaMemcpyHostToDevice);
 	cudaMalloc((void**)&dev_max_ptr, sizeof(float3));
 	cudaMemcpy((void*)&dev_max_ptr, &max, sizeof(float3), cudaMemcpyHostToDevice);
-	printf("min = (%.2f, %.2f, %.2f), max=(%.2f, %.2f, %.2f)\n", min.x, min.y, min.z, max.x, max.y, max.z);
+	printf("min = (%.2f, %.2f, %.2f), max=(%.2f, %.2f, %.2f)\n", min.x, min.y, min.z, max.x, max.y, max.z);*/
+	size_t box_bytes = 2 * sizeof(float3);
+	cudaMalloc((void**)&dev_AABB_ptr);
 }
 
 //this function is added to make syntax of intersectScene easier. It is inlined.
@@ -320,10 +323,7 @@ __device__ inline bool intersectAABB(const Ray &r,float3 &min,float3& max){
 
 __device__ inline bool intersectBoundingBox(const Ray &r, float3 &min, float3& max){
 	float3 invdir = make_float3(1.f / r.dir.x, 1.f / r.dir.y, 1.f / r.dir.z);
-	//printf("R.dir = (%.2f, %.2f, %.2f)\n", r.dir.x, r.dir.y, r.dir.z);
-	//printf("length of dir = %.2f", sqrtf(r.dir.x*r.dir.x + r.dir.y*r.dir.y + r.dir.z*r.dir.z));
-	//printf("Device min = (%.2f, %.2f, %.2f)\n", min.x, min.y, min.z);
-	//printf("Device max = (%.2f, %.2f, %.2f)\n", min.x, min.y, min.z);
+
 	
 	float t1 = (min.x - r.origin.x) * invdir.x;
 	float t2 = (max.x - r.origin.x) * invdir.x;
@@ -332,8 +332,8 @@ __device__ inline bool intersectBoundingBox(const Ray &r, float3 &min, float3& m
 	float t5 = (min.z - r.origin.z) * invdir.z;
 	float t6 = (max.z - r.origin.z) * invdir.z;
 
-	float tmin = max_float(max_float(min_float(t1, t2),min_float(t3, t4)), min_float(t5, t6));
-	float tmax = min_float(min_float(max_float(t1, t2), max_float(t3, t4)), max_float(t5, t6));
+	float tmin = fmaxf(fmaxf(fminf(t1, t2),fminf(t3, t4)), fminf(t5, t6));
+	float tmax = fminf(fminf(fmaxf(t1, t2), fmaxf(t3, t4)), fmaxf(t5, t6));
 	printf("Tmin = %.2f           Tmax = %.2f", tmin, tmax);
 	//if tmax < 0, ray intersects AABB but in the inverse direction (i.e. it's behind us)
 	if (tmax < 0)
