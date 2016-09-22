@@ -20,7 +20,7 @@
 #endif
 
 //forward declarations
-extern void renderKernelWrapper(float3 *out_host, int numspheres, loadingTriangle* tri_list, int numtris,float3& min, float3& max);
+extern void renderKernelWrapper(float3 *out_host, int numspheres, loadingTriangle* tri_list, int numtris,float3 * AABB);
 extern void testKernelWrapper(float *out_host);
 extern void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris);
 void check_mesh(int numberoftris, int check_from, int check_to);
@@ -375,8 +375,10 @@ int main()
 	cudaEventRecord(start);
 	//schedule GPU threads and launch kernel from host CPU
 	float3* out_host = new float3[XRES*YRES];
-
-	renderKernelWrapper(out_host, 8, &triangle_list[0], triangle_list.size(), min, max);
+	float3* AABB = new float3[2];
+	AABB[0] = min;
+	AABB[1] = max;
+	renderKernelWrapper(out_host, 8, &triangle_list[0], triangle_list.size(), AABB);
 
 	cudaEventRecord(stop);
 	cudaDeviceSynchronize();

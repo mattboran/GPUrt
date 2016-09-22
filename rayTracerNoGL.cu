@@ -56,7 +56,9 @@ struct Camera{
 		//inverse Xres and YRES are used to produce a correct aspect ratio based on pixel values of
 		//the render screen
 		float inv_yres = 1.f / YRES;
-		float r1 = 2 * curand_uniform(randstate), dx;//r1 and r2 are 
+		//this following snippet of code introduces an in-pixel modifier for the precise position of the ray through the 
+		//image plane. It applies a tent filter to the modifier to get more pixels in the center of the pixel than on the outside.
+		float r1 = 2 * curand_uniform(randstate), dx;
 		if (r1 < 1){
 			dx = sqrtf(r1) - 1;
 		}
@@ -261,13 +263,10 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 //This cude is CLUSTERFUCKed. Casts on casts on casts 
 void loadAABBtoMemory(float3 *AABB){
 	printf("Loading AABB to device DRAM - %d bytes\n", 2 * sizeof(float3));
-	/*cudaMalloc((void**)&dev_min_ptr, sizeof(float3));
-	cudaMemcpy(dev_min_ptr, &min, sizeof(float3), cudaMemcpyHostToDevice);
-	cudaMalloc((void**)&dev_max_ptr, sizeof(float3));
-	cudaMemcpy((void*)&dev_max_ptr, &max, sizeof(float3), cudaMemcpyHostToDevice);
-	printf("min = (%.2f, %.2f, %.2f), max=(%.2f, %.2f, %.2f)\n", min.x, min.y, min.z, max.x, max.y, max.z);*/
 	size_t box_bytes = 2 * sizeof(float3);
-	cudaMalloc((void**)&dev_AABB_ptr);
+	cudaMalloc((void**)&dev_AABB_ptr, box_bytes);
+	cudaMemcpy(dev_AABB_ptr, &AABB[0], box_bytes, cudaMemcpyHostToDevice);
+	printf("Successfully loaded AABB with:\nmin: (%.2f, %.2f, %.2f)\nmax: (%.2f, %.2f, %.2f)\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z);
 }
 
 //this function is added to make syntax of intersectScene easier. It is inlined.
@@ -321,16 +320,16 @@ __device__ inline bool intersectAABB(const Ray &r,float3 &min,float3& max){
 	return true;
 }
 
-__device__ inline bool intersectBoundingBox(const Ray &r, float3 &min, float3& max){
+__device__ inline bool intersectBoundingBox(const Ray &r, float3* AABB){
 	float3 invdir = make_float3(1.f / r.dir.x, 1.f / r.dir.y, 1.f / r.dir.z);
 
 	
-	float t1 = (min.x - r.origin.x) * invdir.x;
-	float t2 = (max.x - r.origin.x) * invdir.x;
-	float t3 = (min.y - r.origin.y) * invdir.y;
-	float t4 = (max.y - r.origin.y) * invdir.y;
-	float t5 = (min.z - r.origin.z) * invdir.z;
-	float t6 = (max.z - r.origin.z) * invdir.z;
+	float t1 = (AABB[0].x - r.origin.x) * invdir.x;
+	float t2 = (AABB[1].x - r.origin.x) * invdir.x;
+	float t3 = (AABB[0].y - r.origin.y) * invdir.y;
+	float t4 = (AABB[1].y - r.origin.y) * invdir.y;
+	float t5 = (AABB[0].z - r.origin.z) * invdir.z;
+	float t6 = (AABB[1].z - r.origin.z) * invdir.z;
 
 	float tmin = fmaxf(fmaxf(fminf(t1, t2),fminf(t3, t4)), fminf(t5, t6));
 	float tmax = fminf(fminf(fmaxf(t1, t2), fmaxf(t3, t4)), fmaxf(t5, t6));
@@ -364,7 +363,7 @@ __device__ inline void intersectListOfTriangles(const Ray &r, float &t, int &id,
 }
 
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
-__device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris, float3 &min, float3 &max){
+__device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris, float3 *AABB){
 	float tprime;
 	float inf = 1e15f;
 	t = inf; //initialize t to infinite distance
@@ -376,12 +375,12 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	}
 	//0 through 8 for ID represent spheres 1 through 9
 	//the next ID's correspond to triangles
-	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max
+	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max (AABB[0], AABB[1]
 	
 	bool use_AABB = true;
 	//this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
 	if (use_AABB){
-		if (intersectBoundingBox(r, min, max)){
+		if (intersectBoundingBox(r, AABB)){
 			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
 		}
 	}
@@ -410,7 +409,7 @@ __device__ inline float getMax(float3 f){
 //by reflectence function of material, weighted by cosine incidence angle (Lambert's cosine law)
 //Inputs: ray to calculate radiance along, and seeds for random num generation.
 //Output: color at point.
-__device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, Triangle *tri_list, int numtris, float3 &min, float3 &max){
+__device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, Triangle *tri_list, int numtris, float3 *AABB){
 	float3 accumulated = make_float3(0.f, 0.f, 0.f); //accumulated ray color for each iteration of loop
 	float3 mask = make_float3(1.f, 1.f, 1.f);
 	int numspheres = 9;
@@ -431,7 +430,7 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 		int id = 0; //index of hit 
 		float3 d; //next ray direction
 
-		if (!intersectScene(r, t, id, sphere_list, numspheres, tri_list, numtris, min, max))
+		if (!intersectScene(r, t, id, sphere_list, numspheres, tri_list, numtris, AABB))
 			return make_float3(0.f, 0.f, 0.f); //return background color of 0 if no hit
 
 		//if the loop gets to here, we have hit. compute hit point and surface normal
@@ -567,7 +566,7 @@ uint hash(uint seed){
 }
 //this is the main rendering kernel that can be called from the CPU, runs in parallel on CUDA threads.
 //each pixel runs in parallel
-__global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphere_list, Triangle *tri_list, int numtris, float3 &min, float3 &max){
+__global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphere_list, Triangle *tri_list, int numtris, float3 *AABB){
 	//assign thread to every pixel
 	unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
 	unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -587,7 +586,7 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 
 	for (int s = 0; s < SAMPLES; s++){
 		//primary ray dir, randomly jittered by a small amount (will be changed when there's a better camera struct)
-		col = col + radiance(rayCaster.computeCameraRay(x, y, &randstate), &randstate, sphere_list, tri_list, numtris, min, max);// (1.f / SAMPLES);
+		col = col + radiance(rayCaster.computeCameraRay(x, y, &randstate), &randstate, sphere_list, tri_list, numtris, AABB);// (1.f / SAMPLES);
 	}
 	//write rgb value of pixel to image buffer on GPU, clamped on [0.0f, 1.0f]
 	float cor = (1.f / SAMPLES); //cor = correction: we want the average color
@@ -595,19 +594,19 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 }
 
 //this wrapper function is used when the cpp main file calls the render kernel
-void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris,float3 &min,float3 &max){
+void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris, float3* AABB){
 	float3* out_dvc;
 
 	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
 
 	loadSpheresToMemory(spheres, numspheres);
 	loadMeshToMemory(tri_list, numtris);
-	loadAABBtoMemory(min, max);
+	loadAABBtoMemory(AABB);
 	
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
 	printf("%d number of triangles\n", numtris);
-	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris, dev_min_ptr, dev_max_ptr);
+	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris, dev_AABB_ptr);
 
 	cudaMemcpy(out_host, out_dvc, XRES * YRES * sizeof(float3), cudaMemcpyDeviceToHost);
 	cudaFree(out_dvc);
