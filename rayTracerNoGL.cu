@@ -12,7 +12,7 @@
 #define XRES 240
 #define YRES 160
 
-#define SAMPLES 1
+#define SAMPLES 256
 
 //forward declarations
 //uint hash(uint seed);
@@ -72,9 +72,11 @@ struct Camera{
 		else{
 			dy = 1 - sqrtf(2 - r2);
 		}
-		float normalized_i = ((i + dx) / (float)XRES) - 0.5f;
-		float normalized_j = ((j + dy) / (float)YRES) - 0.5f;
-			float3 image_point = normalized_i * camera_right * (inv_yres * XRES) +
+		float normalized_i = ((i + dx/2.f) / (float)XRES) - 0.5f;
+		float normalized_j = ((j + dy/2.f) / (float)YRES) - 0.5f;
+
+
+		float3 image_point = normalized_i * camera_right * (inv_yres * XRES) +
 			normalized_j * camera_up + 
 			camera_position + camera_direction;
 		float3 ray_direction = image_point - camera_position;
@@ -185,8 +187,6 @@ struct Triangle{
 Sphere *dev_sphere_ptr;
 Triangle *dev_tri_ptr;
 //These two variables are the device pointers to min and max of AABB
-float3 dev_min_ptr;
-float3 dev_max_ptr;
 float3 *dev_AABB_ptr;
 
 //These numbers come directly from smallPT
@@ -201,7 +201,7 @@ Sphere spheres[] = {
 	{ 1e3f, { 5.00f, 4.08f, -1e4f + 60.00f }, { 0.0f, 0.0f, 0.0f }, { 1.00f, 1.00f, 1.00f }, DIFF }, //Front 
 	{ 1e4f, { 5.00f, 1e4f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Bottom 
 	{ 1e4f, { 5.00f, -1e4f + 8.16f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Top 
-	//{ 1.65f, { 2.70f, 1.65f, 4.70f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, SPEC }, // small sphere 1
+	{ 1.65f, { 2.70f, 1.65f, 4.70f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, SPEC }, // small sphere 1
 	{ 1.65f, { 7.30f, 1.65f, 7.80f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, REFR }, // small sphere 2
 	{ 60.0f, { 5.00f, 68.16f - .05f, 8.16f }, { 2.0f, 1.8f, 1.6f }, { 0.0f, 0.0f, 0.0f }, DIFF }  // Light
 };
@@ -212,11 +212,21 @@ Triangle tris[] = {
 	//{ { 5.f, 1.f, 5.f }, { 5.f, 2.f, 5.f }, { 6.f, 1.f, 5.f }, { 1.f, 0.f, 0.f }, { 1.f, 0.f, 0.f }, DIFF }
 };
 
+//LOADING DATA TO DEVICE DRAM////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////
+//From here down, there are a series of methods that are called to load various things to 
+//Device DRAM. This includes spheres, triangles, meshes, and AABB's. It also includes code
+//That allows for storing the data in a different kind of device RAM (ie. texture memory, which
+//is cached.
+//////////////////////////////////////////////////////////////////////////////////////////
+
 //this function loads the spheres defined above into DRAM
 void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 	size_t numspheres = numberofspheres * sizeof(Sphere);
-	printf("Loading %d bytes for %d spheres,\n", numspheres, numberofspheres);
+	printf("\mLoading %d bytes for %d spheres,\n", numspheres, numberofspheres);
 	cudaMalloc((void **)&dev_sphere_ptr, numspheres);//void** cast is so cudaMalloc will accept the address of sphere pointer as parameter
+	printf("Start address of dev_spr_ptr = %d\n", &dev_sphere_ptr);
+	printf("End address of dev_spr_ptr = %d\n", (&dev_sphere_ptr + numspheres));
 	cudaMemcpy(dev_sphere_ptr, &sph_list[0], numspheres, cudaMemcpyHostToDevice);
 }
 
@@ -265,6 +275,8 @@ void loadAABBtoMemory(float3 *AABB){
 	printf("Loading AABB to device DRAM - %d bytes\n", 2 * sizeof(float3));
 	size_t box_bytes = 2 * sizeof(float3);
 	cudaMalloc((void**)&dev_AABB_ptr, box_bytes);
+	printf("Start address of dev_AABB_ptr = %d\n", &dev_sphere_ptr);
+	printf("End address of dev_AABB_ptr = %d\n", (&dev_sphere_ptr + box_bytes));
 	cudaMemcpy(dev_AABB_ptr, &AABB[0], box_bytes, cudaMemcpyHostToDevice);
 	printf("Successfully loaded AABB with:\nmin: (%.2f, %.2f, %.2f)\nmax: (%.2f, %.2f, %.2f)\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z);
 }
@@ -377,17 +389,17 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//the next ID's correspond to triangles
 	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max (AABB[0], AABB[1]
 	
-	bool use_AABB = true;
-	//this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
-	if (use_AABB){
-		if (intersectBoundingBox(r, AABB)){
-			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
-		}
-	}
+	//bool use_AABB = true;
+	////this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
+	//if (use_AABB){
+	//	if (intersectBoundingBox(r, AABB)){
+	//		intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
+	//	}
+	//}
 	//
-	else{
-		intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
-	}
+	//else{
+	//	intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
+	//}
 
 	//if hit occured, t is > 0 and < inf.
 	return t < inf;
@@ -600,8 +612,8 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
 
 	loadSpheresToMemory(spheres, numspheres);
-	loadMeshToMemory(tri_list, numtris);
-	loadAABBtoMemory(AABB);
+	//loadMeshToMemory(tri_list, numtris);
+	//loadAABBtoMemory(AABB);
 	
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);

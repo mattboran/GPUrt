@@ -16,7 +16,7 @@
 #define YRES 160
 #endif
 #ifndef SAMPLES
-#define SAMPLES 1
+#define SAMPLES 32
 #endif
 
 //forward declarations
@@ -347,9 +347,9 @@ int main()
 
 	float3 min = make_float3(-99999999.9f, -99999999.9f, -99999999.9f);
 	float3 max = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
-	float3 scale = make_float3(0.5, 0.5, 0.5);
-	float3 translate = make_float3(5, 1.25, 5);
-	char* filename = "models/cow.obj";
+	float3 scale = make_float3(1,1,1);
+	float3 translate = make_float3(0,0,0);
+	char* filename = "models/tinytest.obj";
 	std::cout << filename << " being loaded. \n\n";
 	bool has_uvs = false;
 	int numtris = loadOBJ(filename, vertex_list, normal_list, uv_list, f_indices, uv_indices, has_uvs);
@@ -378,7 +378,7 @@ int main()
 	float3* AABB = new float3[2];
 	AABB[0] = min;
 	AABB[1] = max;
-	renderKernelWrapper(out_host, 8, &triangle_list[0], triangle_list.size(), AABB);
+	renderKernelWrapper(out_host, 9, &triangle_list[0], triangle_list.size(), AABB);
 
 	cudaEventRecord(stop);
 	cudaDeviceSynchronize();
