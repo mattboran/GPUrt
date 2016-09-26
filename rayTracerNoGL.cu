@@ -12,7 +12,7 @@
 #define XRES 240
 #define YRES 160
 
-#define SAMPLES 256
+#define SAMPLES 1
 
 //forward declarations
 //uint hash(uint seed);
@@ -345,7 +345,7 @@ __device__ inline bool intersectBoundingBox(const Ray &r, float3* AABB){
 
 	float tmin = fmaxf(fmaxf(fminf(t1, t2),fminf(t3, t4)), fminf(t5, t6));
 	float tmax = fminf(fminf(fmaxf(t1, t2), fmaxf(t3, t4)), fmaxf(t5, t6));
-	printf("Tmin = %.2f           Tmax = %.2f", tmin, tmax);
+	printf("min = (%.2f, %.2f, %.2f), max = (%.2f, %.2f, %.2f)\ntmin = %.2f, tmax=%.2f\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z, tmin, tmax);
 	//if tmax < 0, ray intersects AABB but in the inverse direction (i.e. it's behind us)
 	if (tmax < 0)
 	{
@@ -389,13 +389,14 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//the next ID's correspond to triangles
 	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max (AABB[0], AABB[1]
 	
-	//bool use_AABB = true;
+	bool use_AABB = true;
 	////this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
-	//if (use_AABB){
-	//	if (intersectBoundingBox(r, AABB)){
-	//		intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
-	//	}
-	//}
+	if (use_AABB){
+		if (!intersectBoundingBox(r, AABB)){
+			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
+
+		}
+	}
 	//
 	//else{
 	//	intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
@@ -612,8 +613,8 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
 
 	loadSpheresToMemory(spheres, numspheres);
-	//loadMeshToMemory(tri_list, numtris);
-	//loadAABBtoMemory(AABB);
+	loadMeshToMemory(tri_list, numtris);
+	loadAABBtoMemory(AABB);
 	
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
