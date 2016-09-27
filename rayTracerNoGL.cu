@@ -12,7 +12,7 @@
 #define XRES 240
 #define YRES 160
 
-#define SAMPLES 1
+#define SAMPLES 64
 
 //forward declarations
 //uint hash(uint seed);
@@ -55,9 +55,12 @@ struct Camera{
 	__device__ inline Ray computeCameraRay(int i, int j, curandState *randstate){
 		//inverse Xres and YRES are used to produce a correct aspect ratio based on pixel values of
 		//the render screen
-		float inv_yres = 1.f / YRES;
+		
 		//this following snippet of code introduces an in-pixel modifier for the precise position of the ray through the 
 		//image plane. It applies a tent filter to the modifier to get more pixels in the center of the pixel than on the outside.
+		
+		//I commented out the tent filter because it seems to produce a strange form of diagonal aliasing.
+		//Depending on resulting output, I will figure out what to do here instead.
 		float r1 = 2 * curand_uniform(randstate), dx;
 		if (r1 < 1){
 			dx = sqrtf(r1) - 1;
@@ -72,8 +75,11 @@ struct Camera{
 		else{
 			dy = 1 - sqrtf(2 - r2);
 		}
-		float normalized_i = ((i + dx/2.f) / (float)XRES) - 0.5f;
-		float normalized_j = ((j + dy/2.f) / (float)YRES) - 0.5f;
+		
+		float inv_yres = 1.f / YRES;
+
+		float normalized_i = ((i + dx) / (float)XRES) - 0.5f;
+		float normalized_j = ((j + dy) / (float)YRES) - 0.5f;
 
 
 		float3 image_point = normalized_i * camera_right * (inv_yres * XRES) +
@@ -120,6 +126,8 @@ struct __declspec(align(64))Sphere {
 	}
 };
 
+//Triangles are 128-byte objects defined by 3 points in 3d space, 3 UV coordinates in 2d space, and the same material
+//proprties that spheres use (emmission, color, surface material type)
 struct Triangle{
 	float3 v1, v2, v3; //triangle defined by 3 vertices
 	float3 emit, col;
@@ -389,14 +397,14 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//the next ID's correspond to triangles
 	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max (AABB[0], AABB[1]
 	
-	bool use_AABB = true;
+	//bool use_AABB = true;
 	////this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
-	if (use_AABB){
-		if (!intersectBoundingBox(r, AABB)){
+	//if (use_AABB){
+	//	if (!intersectBoundingBox(r, AABB)){
 			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
-
-		}
-	}
+//
+	//	}
+	//}
 	//
 	//else{
 	//	intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
