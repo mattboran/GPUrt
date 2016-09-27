@@ -16,7 +16,7 @@
 #define YRES 160
 #endif
 #ifndef SAMPLES
-#define SAMPLES 64
+#define SAMPLES 512
 #endif
 
 //forward declarations
@@ -35,7 +35,7 @@ struct Triangle;
 //this function returns the minimum XYZ of the 3 vector3's presented.
 //for bounding box creation
 float3 min3(const float3 &v1, const float3 &v2, const float3 &v3){
-	float3 min(v1);
+	float3 min = make_float3(v1.x, v1.y, v1.z);
 	if (v2.x < min.x){
 		min.x = v2.x;
 	}
@@ -313,22 +313,22 @@ int populateTriangles(const std::vector<float3> &vertex_list, const std::vector<
 		//next, create thisTri with the approrpiate vertices
 		loadingTriangle thisTri(_v1, _v2, _v3);
 
-		//update min for bounding box
-		temp = (_v1, _v2, _v3);
-		if (temp.x < min.x)
-			min.x = temp.x;
-		if (temp.y < min.y)
-			min.y = temp.y;
-		if (temp.z < min.z)
-			min.z = temp.z;
-		//update max for bounding box
-		temp = max3(_v1, _v2, _v3);
-		if (temp.x > max.x)
-			max.x = temp.x;
-		if (temp.y > max.y)
-			max.y = temp.y;
-		if (temp.z > max.z)
-			max.z = temp.z;
+		//calculate bounding box
+		float3 tempmin = min3(_v1, _v2, _v3);
+		float3 tempmax = max3(_v1, _v2, _v3);
+		if (tempmin.x < min.x)
+			min.x = tempmin.x;
+		if (tempmin.y < min.y)
+			min.y = tempmin.y;
+		if (tempmin.z < min.z)
+			min.z = tempmin.z;
+		if (tempmax.x > max.x)
+			max.x = tempmax.x;
+		if (tempmax.y > max.y)
+			max.y = tempmax.y;
+		if (tempmax.z > max.z)
+			max.z = tempmax.z;
+
 		//add thisTri to tris list
 		tris.push_back(thisTri);
 

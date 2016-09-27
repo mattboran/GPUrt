@@ -353,7 +353,7 @@ __device__ inline bool intersectBoundingBox(const Ray &r, float3* AABB){
 
 	float tmin = fmaxf(fmaxf(fminf(t1, t2),fminf(t3, t4)), fminf(t5, t6));
 	float tmax = fminf(fminf(fmaxf(t1, t2), fmaxf(t3, t4)), fmaxf(t5, t6));
-	printf("min = (%.2f, %.2f, %.2f), max = (%.2f, %.2f, %.2f)\ntmin = %.2f, tmax=%.2f\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z, tmin, tmax);
+	//printf("min = (%.2f, %.2f, %.2f), max = (%.2f, %.2f, %.2f)\ntmin = %.2f, tmax=%.2f\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z, tmin, tmax);
 	//if tmax < 0, ray intersects AABB but in the inverse direction (i.e. it's behind us)
 	if (tmax < 0)
 	{
@@ -400,10 +400,10 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//bool use_AABB = true;
 	////this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
 	//if (use_AABB){
-	//	if (!intersectBoundingBox(r, AABB)){
-	intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
-	//
-	//	}
+		if (intersectBoundingBox(r, AABB)){
+			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
+	
+		}
 	//}
 	//
 	//else{
