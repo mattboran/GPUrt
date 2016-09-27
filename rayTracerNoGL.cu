@@ -12,7 +12,7 @@
 #define XRES 240
 #define YRES 160
 
-#define SAMPLES 64
+#define SAMPLES 128
 
 //forward declarations
 //uint hash(uint seed);
@@ -397,18 +397,18 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//the next ID's correspond to triangles
 	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max (AABB[0], AABB[1]
 	
-	//bool use_AABB = true;
+	bool use_AABB = true;
 	////this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
-	//if (use_AABB){
+	if (use_AABB){
 		if (intersectBoundingBox(r, AABB)){
 			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
 	
 		}
-	//}
-	//
-	//else{
-	//	intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
-	//}
+	}
+	
+	else{
+		intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
+	}
 
 	//if hit occured, t is > 0 and < inf.
 	return t < inf;
