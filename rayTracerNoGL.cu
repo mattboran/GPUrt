@@ -233,8 +233,6 @@ void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 	size_t numspheres = numberofspheres * sizeof(Sphere);
 	printf("\mLoading %d bytes for %d spheres,\n", numspheres, numberofspheres);
 	cudaMalloc((void **)&dev_sphere_ptr, numspheres);//void** cast is so cudaMalloc will accept the address of sphere pointer as parameter
-	printf("Start address of dev_spr_ptr = %d\n", &dev_sphere_ptr);
-	printf("End address of dev_spr_ptr = %d\n", (&dev_sphere_ptr + numspheres));
 	cudaMemcpy(dev_sphere_ptr, &sph_list[0], numspheres, cudaMemcpyHostToDevice);
 }
 
@@ -272,7 +270,6 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 	size_t numtris = numberoftris * sizeof(Triangle);
 	cudaMalloc((void**)&dev_tri_ptr, numtris);
 	cudaMemcpy(dev_tri_ptr, &trianglelist[0], numtris, cudaMemcpyHostToDevice);
-	printf("Load of mesh onto device DRAM success\n");
 	delete[] trianglelist;
 }
 
@@ -280,11 +277,8 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 //with the bytes of data at &min and &max. 
 //This cude is CLUSTERFUCKed. Casts on casts on casts 
 void loadAABBtoMemory(float3 *AABB){
-	printf("Loading AABB to device DRAM - %d bytes\n", 2 * sizeof(float3));
 	size_t box_bytes = 2 * sizeof(float3);
 	cudaMalloc((void**)&dev_AABB_ptr, box_bytes);
-	printf("Start address of dev_AABB_ptr = %d\n", &dev_sphere_ptr);
-	printf("End address of dev_AABB_ptr = %d\n", (&dev_sphere_ptr + box_bytes));
 	cudaMemcpy(dev_AABB_ptr, &AABB[0], box_bytes, cudaMemcpyHostToDevice);
 	printf("Successfully loaded AABB with:\nmin: (%.2f, %.2f, %.2f)\nmax: (%.2f, %.2f, %.2f)\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z);
 }
@@ -627,6 +621,7 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
 	printf("%d number of triangles\n", numtris);
+	printf("\nLaunchng render_kernel for %d samples\n", SAMPLES);
 	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris, dev_AABB_ptr);
 
 	cudaMemcpy(out_host, out_dvc, XRES * YRES * sizeof(float3), cudaMemcpyDeviceToHost);
