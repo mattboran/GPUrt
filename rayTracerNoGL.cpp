@@ -9,15 +9,6 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
-#ifndef XRES
-#define XRES 240
-#endif
-#ifndef YRES
-#define YRES 160
-#endif
-#ifndef SAMPLES
-#define SAMPLES 32
-#endif
 
 //forward declarations
 extern void renderKernelWrapper(float3 *out_host, int numspheres, loadingTriangle* tri_list, int numtris,float3 * AABB);
@@ -288,7 +279,7 @@ int main()
 	//now load the mesh to CUDA memory. Since we use vectors, we pass address of vector[0] as our pointer to triangle_list
 	//loadMeshToMemory(&triangle_list[0], triangle_list.size());
 
-	printf("\nGPUrt memory fully initialized. \nRender for %d samples started...\n", SAMPLES);
+	printf("\nGPUrt initializing. \nRender is for %d samples and resolution %d by %d\n", SAMPLES, XRES, YRES);
 
 	cudaEvent_t start, stop;
 	float time_elapsed;

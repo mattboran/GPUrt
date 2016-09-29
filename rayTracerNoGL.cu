@@ -7,15 +7,6 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
-#define M_PI 3.14159265359f
-#define EPSILON 0.00001f
-#define XRES 240
-#define YRES 160
-
-#define SAMPLES 32
-
-//forward declarations
-//uint hash(uint seed);
 
 //3 types of materials used in the radiance() function. 
 enum Refl_t { DIFF, SPEC, REFR };
@@ -214,12 +205,6 @@ Sphere spheres[] = {
 	{ 60.0f, { 5.00f, 68.16f - .05f, 8.16f }, { 2.0f, 1.8f, 1.6f }, { 0.0f, 0.0f, 0.0f }, DIFF }  // Light
 };
 
-Triangle tris[] = {
-	{ make_float3(2.7f, 3.3f, 4.7f), make_float3(4.5f, 4.95f, 4.7f), make_float3( 7.3f, 3.3f, 7.8f ), make_float3(0.f, 0.f, 0.f ), make_float3( 0.f, .8f, 0.f), DIFF } ,
-	{ make_float3(2.7f, 3.3f, 4.7f), make_float3(2.75f, 4.95f, 4.7f), make_float3(-2.7f, 3.3f, 4.8f), make_float3(0.f, 0.f, 0.f), make_float3(0.3f, 0.f, 0.f), DIFF }
-	//{ { 5.f, 1.f, 5.f }, { 5.f, 2.f, 5.f }, { 6.f, 1.f, 5.f }, { 1.f, 0.f, 0.f }, { 1.f, 0.f, 0.f }, DIFF }
-};
-
 //LOADING DATA TO DEVICE DRAM////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////
 //From here down, there are a series of methods that are called to load various things to 
@@ -261,7 +246,7 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 		trianglelist[i].v1 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
 		trianglelist[i].v2 = make_float3(tri_list[i].v2.x, tri_list[i].v2.y, tri_list[i].v2.z);
 		trianglelist[i].v3 = make_float3(tri_list[i].v3.x, tri_list[i].v3.y, tri_list[i].v3.z);
-		trianglelist[i].col = make_float3(0.9, 0.2, 0.2);
+		trianglelist[i].col = make_float3(0.9, 0.6, 0.6);
 		trianglelist[i].emit = make_float3(0, 0, 0);
 		trianglelist[i].refl = DIFF;
 	}
@@ -620,7 +605,7 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
-	printf("%d number of triangles\n", numtris);
+
 	printf("\nLaunchng render_kernel for %d samples\n", SAMPLES);
 	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris, dev_AABB_ptr);
 

@@ -6,6 +6,12 @@
 #ifndef READER_H
 #define READER_H
 
+#define M_PI 3.14159265359f
+#define EPSILON 0.00001f
+#define XRES 320
+#define YRES 240
+
+#define SAMPLES 1024
 
 //This struct is used to load triangles from .obj files. This will be passed via wrapper 
 //to the CUDA portion to be loaded into texture memory
