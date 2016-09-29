@@ -253,24 +253,6 @@ int main()
 	std::vector<float3> vertex_list;
 	std::vector<unsigned int> f_indices;
 	std::vector<loadingTriangle> triangle_list;
-<<<<<<< HEAD
-	float3 min = make_float3(-99999999.9f, -99999999.9f, -99999999.9f);
-	float3 max = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
-	float3 scale = make_float3(1, 1, 1);
-	float3 translate = make_float3(5, 1.25, 5);
-	char* filename = "teapot2.obj";
-	std::cout << filename << " being loaded. \n\n";
-	bool has_uvs = false;
-
-	int numtris = loadOBJ(filename, vertex_list, normal_list, uv_list, f_indices, uv_indices, has_uvs);
-	has_uvs = false;
-	if (numtris == populateTriangles(vertex_list, uv_list, f_indices, uv_indices, triangle_list, min, max, translate, scale, has_uvs)){
-		std::cout << "Successfully loaded " << filename << " with " << numtris << " triangles\n";
-	}
-	else{
-		std::cout << "Failed loading " << filename << "\n";
-	}
-=======
 
 	float3 * AABB = new float3[2];
 	AABB[0] = make_float3(-99999999.9f, -99999999.9f, -99999999.9f);
@@ -294,7 +276,7 @@ int main()
 	//else{
 	//	std::cout << "Failed loading " << filename << "\n";
 	//}
->>>>>>> AABB
+
 	//now load the mesh to CUDA memory. Since we use vectors, we pass address of vector[0] as our pointer to triangle_list
 	//loadMeshToMemory(&triangle_list[0], triangle_list.size());
 
