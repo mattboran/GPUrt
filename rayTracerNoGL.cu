@@ -270,57 +270,6 @@ void loadAABBtoMemory(float3 *AABB){
 	printf("Successfully loaded AABB with:\nmin: (%.2f, %.2f, %.2f)\nmax: (%.2f, %.2f, %.2f)\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z);
 }
 
-//this function is added to make syntax of intersectScene easier. It is inlined.
-//this tests intersection of Ray r and AABB defined by float3's min and max
-__device__ inline bool intersectAABB(const Ray &r,float3 &min,float3& max){
-	float3 invdir = make_float3(1.f / r.dir.x, 1.f / r.dir.y, 1.f / r.dir.z);
-	float tmin = (min.x - r.origin.x) * invdir.x;
-	float tmax = (max.x - r.origin.x) * invdir.x;
-
-	if (tmin > tmax){
-		float temp = tmax;
-		tmax = tmin;
-		tmin = temp;
-	}
-
-	float tymin = (min.y - r.origin.y) * invdir.y;
-	float tymax = (max.y - r.origin.y) * invdir.y;
-
-	if (tymin > tymax){
-		float temp = tymax;
-		tymax = tymin;
-		tymin = temp;
-	}
-	if ((tmin > tymax) || (tymin > tmax))
-		return false;
-
-	if (tymin > tmin)
-		tmin = tmin;
-
-	if (tymax < tmax)
-		tmax = tymax;
-
-	float tzmin = (min.z - r.origin.z) * invdir.z;
-	float tzmax = (max.z - r.origin.z) * invdir.z;
-
-	if (tzmin > tzmax){
-		float temp = tzmax;
-		tzmax = tzmin;
-		tzmin = temp;
-	}
-
-	if ((tmin > tzmax) || (tzmin > tmax))
-		return false;
-
-	if (tzmin > tmin)
-		tmin = tzmin;
-
-	if (tzmax < tmax)
-		tmax = tzmax;
-
-	return true;
-}
-
 __device__ inline bool intersectBoundingBox(const Ray &r, float3* AABB){
 	float3 invdir = make_float3(1.f / r.dir.x, 1.f / r.dir.y, 1.f / r.dir.z);
 
