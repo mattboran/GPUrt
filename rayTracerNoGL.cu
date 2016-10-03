@@ -24,13 +24,13 @@ float3 *dev_AABB_ptr;
 //spheres and triangles will eventually be moved to the .cpp file, and used through
 //pointers in the .cu file
 Sphere spheres[] = {
-	{ 1e4f, { 1e4f + .10f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { 0.25f, 0.75f, 0.25f }, DIFF }, //Left 
+	{ 1e4f, { 1e4f + .10f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { 0.75f, 0.25f, 0.25f }, DIFF }, //Left 
 	{ 1e4f, { -1e4f + 9.90f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .25f, .25f, .75f }, DIFF }, //Right 
 	{ 1e4f, { 5.00f, 4.08f, 1e4f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Back 
 	{ 1e3f, { 5.00f, 4.08f, -1e4f + 60.00f }, { 0.0f, 0.0f, 0.0f }, { 1.00f, 1.00f, 1.00f }, DIFF }, //Front 
 	{ 1e4f, { 5.00f, 1e4f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Bottom 
 	{ 1e4f, { 5.00f, -1e4f + 8.16f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Top 
-	{ 1.65f, { 2.70f, 1.65f, 4.70f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, SPEC }, // small sphere 1
+	{ 0.3f, { 6.70f, 0.3f, 4.70f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, SPEC }, // small sphere 1
 	{ 1.65f, { 7.30f, 1.65f, 7.80f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, REFR }, // small sphere 2
 	{ 60.0f, { 5.00f, 68.16f - .05f, 8.16f }, { 2.0f, 1.8f, 1.6f }, { 0.0f, 0.0f, 0.0f }, DIFF }  // Light
 };
@@ -76,9 +76,9 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 		trianglelist[i].v1 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
 		trianglelist[i].v2 = make_float3(tri_list[i].v2.x, tri_list[i].v2.y, tri_list[i].v2.z);
 		trianglelist[i].v3 = make_float3(tri_list[i].v3.x, tri_list[i].v3.y, tri_list[i].v3.z);
-		trianglelist[i].col = make_float3(0.5, 0.5, 0.5);
-		trianglelist[i].emit = make_float3(0, 0, 0);
-		trianglelist[i].refl = SPEC;
+		trianglelist[i].col = make_float3(0.5f, 0.95f, 0.5f);
+		trianglelist[i].emit = make_float3(0, 0.5f, 0);
+		trianglelist[i].refl = DIFF;
 	}
 	printf("Loading mesh made of %d triangles for %d bytes\n\n", numberoftris, numberoftris*sizeof(Triangle));
 	//Note - This will over-write the other triangles stored at &dev_tri_ptr
@@ -111,21 +111,17 @@ __device__ inline bool intersectBoundingBox(const Ray &r, float3* AABB){
 
 	float tmin = fmaxf(fmaxf(fminf(t1, t2),fminf(t3, t4)), fminf(t5, t6));
 	float tmax = fminf(fminf(fmaxf(t1, t2), fmaxf(t3, t4)), fmaxf(t5, t6));
-	//printf("min = (%.2f, %.2f, %.2f), max = (%.2f, %.2f, %.2f)\ntmin = %.2f, tmax=%.2f\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z, tmin, tmax);
 	//if tmax < 0, ray intersects AABB but in the inverse direction (i.e. it's behind us)
 	if (tmax < 0)
 	{
-		//t = tmax;
 		return false;
 	}
 
 	//if tmin  > tmax, ray doesn't intersect AABB
 	if (tmin > tmax)
 	{
-		//t = tmax;
 		return false;
 	}
-	//t = tmin;
 	return true;
 }
 //This function is an inline implementation that intersects a list of triangles - tri_list . This intersect method goes through the device constant memory where
@@ -172,16 +168,7 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	return t < inf;
 }
 
-//This function returns the largest value of x y and z from a float3
-__device__ inline float getMax(float3 f){
-	if (f.x > f.y)
-		return fmax(f.x, f.z);
-	if (f.y > f.x)
-		return fmax(f.y, f.z);
-	if (f.z > f.x)
-		return fmax(f.z, f.x);
-	else return f.x;
-}
+
 //This function calculates radiance at a given ray, returned by a color
 //This solves the rendering equation : outgoing radiance (pixel, point, w/e) = emitted radiance + reflected radiance
 //reflected radiance is integral of incoming radiance from hemisphere above point about surface normal, multiplied

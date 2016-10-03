@@ -11,25 +11,13 @@
 
 #define M_PI 3.14159265359f
 #define EPSILON 0.00001f
-#define XRES 100
-#define YRES 100
-
-#define SAMPLES 128
-
+//Render settings
+#define XRES 320
+#define YRES 240
+#define SAMPLES 512 //samples per pixel
 
 //3 types of materials used in the radiance() function. 
 enum Refl_t { DIFF, SPEC, REFR };
-
-//This struct is used to load triangles from .obj files. This will be passed via wrapper 
-//to the CUDA portion to be loaded into texture memory
-struct loadingTriangle{
-	float3 v1, v2, v3;
-	loadingTriangle(float3 _v1, float3 _v2, float3 _v3){
-		v1 = make_float3(_v1.x, _v1.y, _v1.z);
-		v2 = make_float3(_v2.x, _v2.y, _v2.z);
-		v3 = make_float3(_v3.x, _v3.y, _v3.z);
-	}
-};
 
 //This is the core of the program, hence ray-tracer
 struct Ray{
@@ -44,7 +32,6 @@ struct Ray{
 		printf("Dir = (%.2f, %.2f, %.2f)\n", dir.x, dir.y, dir.z);
 	}
 };
-
 
 //This is a model of the camera that is used to generate rays through the viewing plane. We use the left-hand-pointing
 //model of a camera with defined origin, target direction (normalized), up (normalized), and right (normalized)
@@ -99,11 +86,9 @@ struct Camera{
 			camera_position + camera_direction;
 		float3 ray_direction = image_point - camera_position;
 		return Ray(camera_position, normalize(ray_direction));
-
 	}
+
 };
-
-
 
 //Sphere - primitive object defined by radius and center.
 //All primitives also have emmission (light, a vector) and color (another vector)
@@ -202,25 +187,49 @@ struct Triangle{
 		printf("Color = (%.2f, %.2f, %.2f)\n", col.x, col.y, col.z);
 	}
 };
+
+//This struct is used to load triangles from .obj files. This will be passed via wrapper 
+//to the CUDA portion to be loaded into texture memory
+struct loadingTriangle{
+	float3 v1, v2, v3;
+	loadingTriangle(float3 _v1, float3 _v2, float3 _v3){
+		v1 = make_float3(_v1.x, _v1.y, _v1.z);
+		v2 = make_float3(_v2.x, _v2.y, _v2.z);
+		v3 = make_float3(_v3.x, _v3.y, _v3.z);
+	}
+};
+
 //clamp a float on [0, 1]
 inline float clampf(float x){
 	return x < 0.f ? 0.f : x > 1.f ? 1.f : x;
 }
 //this function converts a float on [0.f, 1.f] to int on [0, 255], gamma-corrected by sqrt 2.2 (standard)
 inline int toInt(float x){
-	return int(pow(clampf(x), 1 / 2.2) * 255 + .5);
+	return int(powf(clampf(x), 1 / 2.2) * 255 + .5);
 }
-
+//This funciton returns the greater of 2 floats
 __device__ inline float max_float(float a, float b){
 	if (a > b){
 		return a;
 	}
 	return b;
 }
+//This funciton returns the lesser of 2 floats
 __device__ inline float min_float(float a, float b){
 	if (a < b){
 		return a;
 	}
 	return b;
+}
+
+//This function returns the largest value of x, y, or z from a float3
+__device__ inline float getMax(float3 f){
+	if (f.x > f.y)
+		return fmax(f.x, f.z);
+	if (f.y > f.x)
+		return fmax(f.y, f.z);
+	if (f.z > f.x)
+		return fmax(f.z, f.x);
+	else return f.x;
 }
 #endif

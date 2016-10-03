@@ -258,10 +258,10 @@ int main()
 	AABB[0] = make_float3(-99999999.9f, -99999999.9f, -99999999.9f);
 	AABB[1] = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
 
-	float3 scale = make_float3(1,1,1);
-	float3 translate = make_float3(5,4,6.75);
+	float3 scale = make_float3(2,2,2);
+	float3 translate = make_float3(4.4,2.f,5.f);
 
-	char* filename = "models/teapot.obj";
+	char* filename = "models/lowpolytree.obj";
 	
 	//int numtris = loadOBJ(filename, vertex_list, normal_list, uv_list, f_indices, uv_indices, has_uvs);
 	
