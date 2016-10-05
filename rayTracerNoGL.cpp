@@ -254,7 +254,7 @@ int main()
 	float3 scale = make_float3(1,1,1);
 	float3 translate = make_float3(5,0.05,4.75);
 
-	char* filename = "models/teapot.obj";
+	char* filename = "models/lowpolytree.obj";
 	
 	//int numtris = loadOBJ(filename, vertex_list, normal_list, uv_list, f_indices, uv_indices, has_uvs);
 	

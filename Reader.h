@@ -16,6 +16,7 @@
 
 #define SAMPLES 512
 
+
 //3 types of materials used in the radiance() function. 
 enum Refl_t { DIFF, SPEC, REFR };
 
@@ -86,11 +87,9 @@ struct Camera{
 			camera_position + camera_direction;
 		float3 ray_direction = image_point - camera_position;
 		return Ray(camera_position, normalize(ray_direction));
-
 	}
+
 };
-
-
 //Sphere - primitive object defined by radius and center.
 //All primitives also have emmission (light, a vector) and color (another vector)
 //struct __declspec(align(64)) Sphere{
@@ -211,15 +210,17 @@ __device__ __host__ inline float getMax(float3 f){
 	else return f.x;
 }
 
+
 //clamp a float on [0, 1]
 inline float clampf(float x){
 	return x < 0.f ? 0.f : x > 1.f ? 1.f : x;
 }
 //this function converts a float on [0.f, 1.f] to int on [0, 255], gamma-corrected by sqrt 2.2 (standard)
- inline int toInt(float x){
-	return int(pow(clampf(x), 1 / 2.2) * 255 + .5);
-}
 
+inline int toInt(float x){
+	return int(powf(clampf(x), 1 / 2.2) * 255 + .5);
+}
+//This funciton returns the greater of 2 floats
 
 __device__ inline float max_float(float a, float b){
 	if (a > b){
@@ -227,10 +228,22 @@ __device__ inline float max_float(float a, float b){
 	}
 	return b;
 }
+//This funciton returns the lesser of 2 floats
 __device__ inline float min_float(float a, float b){
 	if (a < b){
 		return a;
 	}
 	return b;
+}
+
+//This function returns the largest value of x, y, or z from a float3
+__device__ inline float getMax(float3 f){
+	if (f.x > f.y)
+		return fmax(f.x, f.z);
+	if (f.y > f.x)
+		return fmax(f.y, f.z);
+	if (f.z > f.x)
+		return fmax(f.z, f.x);
+	else return f.x;
 }
 #endif

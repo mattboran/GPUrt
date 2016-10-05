@@ -22,7 +22,7 @@ float3 *dev_AABB_ptr;
 //spheres and triangles will eventually be moved to the .cpp file, and used through
 //pointers in the .cu file
 Sphere spheres[] = {
-	{ 1e4f, { 1e4f + .10f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { 0.25f, 0.75f, 0.25f }, DIFF }, //Left 
+	{ 1e4f, { 1e4f + .10f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { 0.75f, 0.25f, 0.25f }, DIFF }, //Left 
 	{ 1e4f, { -1e4f + 9.90f, 4.08f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .25f, .25f, .75f }, DIFF }, //Right 
 	{ 1e4f, { 5.00f, 4.08f, 1e4f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Back 
 	{ 1e3f, { 5.00f, 4.08f, -1e4f + 60.00f }, { 0.0f, 0.0f, 0.0f }, { 1.00f, 1.00f, 1.00f }, DIFF }, //Front 
@@ -115,21 +115,17 @@ __device__ inline bool intersectBoundingBox(const Ray &r, float3* AABB){
 
 	float tmin = fmaxf(fmaxf(fminf(t1, t2),fminf(t3, t4)), fminf(t5, t6));
 	float tmax = fminf(fminf(fmaxf(t1, t2), fmaxf(t3, t4)), fmaxf(t5, t6));
-	//printf("min = (%.2f, %.2f, %.2f), max = (%.2f, %.2f, %.2f)\ntmin = %.2f, tmax=%.2f\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z, tmin, tmax);
 	//if tmax < 0, ray intersects AABB but in the inverse direction (i.e. it's behind us)
 	if (tmax < 0)
 	{
-		//t = tmax;
 		return false;
 	}
 
 	//if tmin  > tmax, ray doesn't intersect AABB
 	if (tmin > tmax)
 	{
-		//t = tmax;
 		return false;
 	}
-	//t = tmin;
 	return true;
 }
 //This function is an inline implementation that intersects a list of triangles - tri_list . This intersect method goes through the device constant memory where
@@ -175,17 +171,6 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	return t < inf;
 }
 
-//hashing function to get seed for curandDevice
-//this fast hash method was developed by Thomas Wang
-//this is used to re-seed curand every sample
-//uint hash(uint seed){
-//	seed = (seed ^ 61) ^ (seed >> 16);
-//	seed *= 9;
-//	seed = seed ^ (seed >> 4);
-//	seed *= 0x27d4eb2d;
-//	seed = seed ^ (seed >> 15);
-//	return seed;
-//}
 
 //This function calculates radiance at a given ray, returned by a color
 //This solves the rendering equation : outgoing radiance (pixel, point, w/e) = emitted radiance + reflected radiance
