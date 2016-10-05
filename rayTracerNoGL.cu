@@ -9,14 +9,12 @@
 //forward declarations
 uint hash(uint seed);
 
-
-
-
 //These are the device sphere and triangle pointers. 
 Sphere *dev_sphere_ptr;
 Triangle *dev_tri_ptr;
 //These two variables are the device pointers to min and max of AABB
 float3 *dev_AABB_ptr;
+
 
 //These numbers come directly from smallPT
 //had to scale everything down by a factor of 10 to reduce artifacts.
@@ -30,7 +28,7 @@ Sphere spheres[] = {
 	{ 1e3f, { 5.00f, 4.08f, -1e4f + 60.00f }, { 0.0f, 0.0f, 0.0f }, { 1.00f, 1.00f, 1.00f }, DIFF }, //Front 
 	{ 1e4f, { 5.00f, 1e4f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Bottom 
 	{ 1e4f, { 5.00f, -1e4f + 8.16f, 8.16f }, { 0.0f, 0.0f, 0.0f }, { .75f, .75f, .75f }, DIFF }, //Top 
-	{ 1.65f, { 2.70f, 1.65f, 4.70f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, SPEC }, // small sphere 1
+	{ 0.5f, { 2.0f, 0.5f, 4.70f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, SPEC }, // small sphere 1
 	{ 1.65f, { 7.30f, 1.65f, 7.80f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, REFR }, // small sphere 2
 	{ 60.0f, { 5.00f, 68.16f - .05f, 8.16f }, { 2.0f, 1.8f, 1.6f }, { 0.0f, 0.0f, 0.0f }, DIFF }  // Light
 };
@@ -44,7 +42,7 @@ Sphere spheres[] = {
 //////////////////////////////////////////////////////////////////////////////////////////
 
 //this function loads the spheres defined above into DRAM
-void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
+__host__ void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 	size_t numspheres = numberofspheres * sizeof(Sphere);
 	printf("\mLoading %d bytes for %d spheres,\n", numspheres, numberofspheres);
 	cudaMalloc((void **)&dev_sphere_ptr, numspheres);//void** cast is so cudaMalloc will accept the address of sphere pointer as parameter
@@ -52,7 +50,7 @@ void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 }
 
 //this function loads the triangles defined above into DRAM
-void loadTrisToMemory(Triangle *tri_list, int numberoftris){
+__host__ void loadTrisToMemory(Triangle *tri_list, int numberoftris){
 	size_t numtris = numberoftris * sizeof(Triangle);
 	printf("Loading %d bytes for %d triangles,\n", numtris, numberoftris);
 	cudaMalloc((void **)&dev_tri_ptr, numtris); //void** cast is so cudaMalloc will accept the address of triangle pointer as parameter
@@ -60,8 +58,8 @@ void loadTrisToMemory(Triangle *tri_list, int numberoftris){
 }
 
 //this function loads an entire mesh's worth of triangles to dev_tri_ptr
-void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
-	
+__host__ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
+
 	//I really hope this doesn't crash.This was done to avoid having the new Triangle[numberoftris] call because we didn't have a global 
 	//constructor for Triangle.
 	//Allocate memory for bytes that hold Triangle and that will be copied to dev_tri_ptr
@@ -76,11 +74,12 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 		trianglelist[i].v1 = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
 		trianglelist[i].v2 = make_float3(tri_list[i].v2.x, tri_list[i].v2.y, tri_list[i].v2.z);
 		trianglelist[i].v3 = make_float3(tri_list[i].v3.x, tri_list[i].v3.y, tri_list[i].v3.z);
-		trianglelist[i].col = make_float3(0.5, 0.5, 0.5);
+		trianglelist[i].col = make_float3(0.6,0.9,0.6);
 		trianglelist[i].emit = make_float3(0, 0, 0);
 		trianglelist[i].refl = SPEC;
 	}
 	printf("Loading mesh made of %d triangles for %d bytes\n\n", numberoftris, numberoftris*sizeof(Triangle));
+	
 	//Note - This will over-write the other triangles stored at &dev_tri_ptr
 	size_t numtris = numberoftris * sizeof(Triangle);
 	cudaMalloc((void**)&dev_tri_ptr, numtris);
@@ -91,17 +90,22 @@ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 //this function loads the AABB to dev_min_ptr and dev_max_ptr
 //with the bytes of data at &min and &max. 
 //This cude is CLUSTERFUCKed. Casts on casts on casts 
-void loadAABBtoMemory(float3 *AABB){
+__host__ void loadAABBtoMemory(float3 *AABB){
 	size_t box_bytes = 2 * sizeof(float3);
 	cudaMalloc((void**)&dev_AABB_ptr, box_bytes);
 	cudaMemcpy(dev_AABB_ptr, &AABB[0], box_bytes, cudaMemcpyHostToDevice);
 	printf("Successfully loaded AABB with:\nmin: (%.2f, %.2f, %.2f)\nmax: (%.2f, %.2f, %.2f)\n", AABB[0].x, AABB[0].y, AABB[0].z, AABB[1].x, AABB[1].y, AABB[1].z);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//----INTERSECTION CODE---------------------------------------------------------
+//From here on down we have code that does ray-AABB intersection, ray-scene intersection
+//Ray-list of triangles intersection, and ray-texture triangle list intersection
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 __device__ inline bool intersectBoundingBox(const Ray &r, float3* AABB){
 	float3 invdir = make_float3(1.f / r.dir.x, 1.f / r.dir.y, 1.f / r.dir.z);
 
-	
 	float t1 = (AABB[0].x - r.origin.x) * invdir.x;
 	float t2 = (AABB[1].x - r.origin.x) * invdir.x;
 	float t3 = (AABB[0].y - r.origin.y) * invdir.y;
@@ -160,7 +164,6 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	if (use_AABB){
 		if (intersectBoundingBox(r, AABB)){
 			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
-	
 		}
 	}
 	
@@ -172,16 +175,18 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	return t < inf;
 }
 
-//This function returns the largest value of x y and z from a float3
-__device__ inline float getMax(float3 f){
-	if (f.x > f.y)
-		return fmax(f.x, f.z);
-	if (f.y > f.x)
-		return fmax(f.y, f.z);
-	if (f.z > f.x)
-		return fmax(f.z, f.x);
-	else return f.x;
-}
+//hashing function to get seed for curandDevice
+//this fast hash method was developed by Thomas Wang
+//this is used to re-seed curand every sample
+//uint hash(uint seed){
+//	seed = (seed ^ 61) ^ (seed >> 16);
+//	seed *= 9;
+//	seed = seed ^ (seed >> 4);
+//	seed *= 0x27d4eb2d;
+//	seed = seed ^ (seed >> 15);
+//	return seed;
+//}
+
 //This function calculates radiance at a given ray, returned by a color
 //This solves the rendering equation : outgoing radiance (pixel, point, w/e) = emitted radiance + reflected radiance
 //reflected radiance is integral of incoming radiance from hemisphere above point about surface normal, multiplied
@@ -202,9 +207,7 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 	float3 hitobj_emit;
 
 	//ray bounce loop, will use Russian Roulette later
-	for (int bounces = 0; bounces < 20; bounces++){ //this iterative loop replaces recursive path tracing method; max depth is 4 bounces (no RR)
-
-		
+	for (int bounces = 0; bounces < 10; bounces++){ //this iterative loop replaces recursive path tracing method; max depth is 4 bounces (no RR)
 		float t; //distance to hitt
 		int id = 0; //index of hit 
 		float3 d; //next ray direction
@@ -226,13 +229,10 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 			hitobj_color = sphere_list[id].col;
 			hitobj_emit = sphere_list[id].emit;
 
-
 			accumulated += mask*hitobj_emit; //add emitted light to accumulated color, masked by previous bounces
 			refltype = sphere_list[id].refl;
 		}
 		else{ //hit item was not a sphere, therefore it was a triangle.
-			//const Triangle &hitobj = tri_list[id];
-			//printf("We hit triangle! ID = %d, t = %.2f\n", id, t);
 			hitpt = r.origin + r.dir*t;
 			hitnorm = tri_list[id - numspheres].get_Normal(hitpt);
 			float ntest = dot(hitnorm, r.dir);
@@ -244,7 +244,6 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 
 			accumulated += mask*hitobj_emit; //add emitted light to accumulated color, masked by previous bounces
 			refltype = tri_list[id - numspheres].refl;
-
 		}
 
 		//here we branch based on Refl_t; for now all are diffuse. Get a new random ray in hemisphere above hitnorm
@@ -279,7 +278,7 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 		}
 		//REFR reflective type represents glass: index of refraction 1.4
 		//Consider creating an index system for materials
-		else {// (refltype == REFR)
+		else {
 
 			bool into = dot(norm, hitnorm) > 0; // is ray entering or leaving refractive material?
 			float nc = 1.0f;  // Index of Refraction air
@@ -332,17 +331,6 @@ __device__ float3 radiance(Ray &r, curandState *randstate, Sphere *sphere_list, 
 	return accumulated;
 }
 
-//hashing function to get seed for curandDevice
-//this fast hash method was developed by Thomas Wang
-//this is used to re-seed curand every sample
-uint hash(uint seed){
-	seed = (seed ^ 61) ^ (seed >> 16);
-	seed *= 9;
-	seed = seed ^ (seed >> 4);
-	seed *= 0x27d4eb2d;
-	seed = seed ^ (seed >> 15);
-	return seed;
-}
 //this is the main rendering kernel that can be called from the CPU, runs in parallel on CUDA threads.
 //each pixel runs in parallel
 __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphere_list, Triangle *tri_list, int numtris, float3 *AABB){
@@ -370,6 +358,19 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 	//write rgb value of pixel to image buffer on GPU, clamped on [0.0f, 1.0f]
 	float cor = (1.f / SAMPLES); //cor = correction: we want the average color
 	out[i] = make_float3(clamp(col.x*cor, 0.f, 1.f), clamp(col.y*cor, 0.f, 1.f), clamp(col.z*cor, 0.f, 1.f));
+}
+
+
+//hashing function to get seed for curandDevice
+//this fast hash method was developed by Thomas Wang
+//this is used to re-seed curand every sample
+uint hash(uint seed){
+	seed = (seed ^ 61) ^ (seed >> 16);
+	seed *= 9;
+	seed = seed ^ (seed >> 4);
+	seed *= 0x27d4eb2d;
+	seed = seed ^ (seed >> 15);
+	return seed;
 }
 
 //this wrapper function is used when the cpp main file calls the render kernel

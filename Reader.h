@@ -14,37 +14,24 @@
 #define XRES 100
 #define YRES 100
 
-#define SAMPLES 128
-
+#define SAMPLES 512
 
 //3 types of materials used in the radiance() function. 
 enum Refl_t { DIFF, SPEC, REFR };
-
-//This struct is used to load triangles from .obj files. This will be passed via wrapper 
-//to the CUDA portion to be loaded into texture memory
-struct loadingTriangle{
-	float3 v1, v2, v3;
-	loadingTriangle(float3 _v1, float3 _v2, float3 _v3){
-		v1 = make_float3(_v1.x, _v1.y, _v1.z);
-		v2 = make_float3(_v2.x, _v2.y, _v2.z);
-		v3 = make_float3(_v3.x, _v3.y, _v3.z);
-	}
-};
 
 //This is the core of the program, hence ray-tracer
 struct Ray{
 	float3 origin;
 	float3 dir;
 	//construct on gpu
-	__device__ Ray(float3 o, float3 d) : origin(o), dir(d) { }
+	__device__ __host__ Ray(float3 o, float3 d) : origin(o), dir(d) { }
 	//debugging - this method prints the info about the ray to console
-	__device__ void print_info(){
+	__device__ __host__ void print_info(){
 		printf("Ray composed of Origin and Direction.\n");
 		printf("Origin = (%.2f, %.2f, %.2f)\n", origin.x, origin.y, origin.z);
 		printf("Dir = (%.2f, %.2f, %.2f)\n", dir.x, dir.y, dir.z);
 	}
 };
-
 
 //This is a model of the camera that is used to generate rays through the viewing plane. We use the left-hand-pointing
 //model of a camera with defined origin, target direction (normalized), up (normalized), and right (normalized)
@@ -56,11 +43,11 @@ struct Camera{
 	float3 camera_up;
 	float3 camera_right;
 	//Camera should be constructed on device
-	__device__ Camera(float3 pos, float3 target, float3 up) :
+	__device__ __host__ Camera(float3 pos, float3 target, float3 up) :
 		camera_position(pos), camera_direction(normalize(target - pos)), camera_up(normalize(up)), camera_right(normalize(up)){
 		camera_right = cross(camera_direction, camera_up);
 	}
-	__device__ Camera(float3 pos, float3 dir, float3 up, float3 right) :
+	__device__ __host__ Camera(float3 pos, float3 dir, float3 up, float3 right) :
 		camera_position(pos), camera_direction(dir), camera_up(up), camera_right(right) {}
 
 	//This method returns a Ray object generated from i and j coordinates (0 through XRES and 0 through YRES)
@@ -104,7 +91,6 @@ struct Camera{
 };
 
 
-
 //Sphere - primitive object defined by radius and center.
 //All primitives also have emmission (light, a vector) and color (another vector)
 //struct __declspec(align(64)) Sphere{
@@ -146,7 +132,7 @@ struct Triangle{
 	float3 emit, col;
 	Refl_t refl;
 	//const Geom_t geomtype;
-	__host__ Triangle(float3 x, float3 y, float3 z, float3 e, float3 c, Refl_t r) :
+	__device__ __host__ Triangle(float3 x, float3 y, float3 z, float3 e, float3 c, Refl_t r) :
 		v1(x), v2(y), v3(z), emit(e), col(c), refl(r) {}
 
 
@@ -187,10 +173,10 @@ struct Triangle{
 	}
 
 	//return the face normal of the triangle. Interpolate (later in the project)
-	__device__ float3 get_Normal(const float3& hitpt){
+	__device__ inline float3 get_Normal(const float3& hitpt){
 		float3 edge1 = v2 - v1;
 		float3 edge2 = v3 - v1;
-		return cross(edge1, edge2);
+		return cross(edge2, edge1);
 	}
 
 	//this method is used for debugging memory. It prints the info about the triangle to console.
@@ -202,14 +188,38 @@ struct Triangle{
 		printf("Color = (%.2f, %.2f, %.2f)\n", col.x, col.y, col.z);
 	}
 };
+
+//This struct is used to load triangles from .obj files. This will be passed via wrapper 
+//to the CUDA portion to be loaded into texture memory
+struct loadingTriangle{
+	float3 v1, v2, v3;
+	loadingTriangle(float3 _v1, float3 _v2, float3 _v3){
+		v1 = make_float3(_v1.x, _v1.y, _v1.z);
+		v2 = make_float3(_v2.x, _v2.y, _v2.z);
+		v3 = make_float3(_v3.x, _v3.y, _v3.z);
+	}
+};
+
+//This function returns the largest value of x y and z from a float3
+__device__ __host__ inline float getMax(float3 f){
+	if (f.x > f.y)
+		return fmax(f.x, f.z);
+	if (f.y > f.x)
+		return fmax(f.y, f.z);
+	if (f.z > f.x)
+		return fmax(f.z, f.x);
+	else return f.x;
+}
+
 //clamp a float on [0, 1]
 inline float clampf(float x){
 	return x < 0.f ? 0.f : x > 1.f ? 1.f : x;
 }
 //this function converts a float on [0.f, 1.f] to int on [0, 255], gamma-corrected by sqrt 2.2 (standard)
-inline int toInt(float x){
+ inline int toInt(float x){
 	return int(pow(clampf(x), 1 / 2.2) * 255 + .5);
 }
+
 
 __device__ inline float max_float(float a, float b){
 	if (a > b){

@@ -13,17 +13,10 @@
 //forward declarations
 extern void renderKernelWrapper(float3 *out_host, int numspheres, loadingTriangle* tri_list, int numtris,float3 * AABB);
 extern void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris);
-inline float clampf(float x);
-inline int toInt(float x);
-uint hash(uint seed);
-
-struct Sphere;
-struct Ray;
-struct Triangle;
 
 //this function returns the minimum XYZ of the 3 vector3's presented.
 //for bounding box creation
-float3 min3(const float3 &v1, const float3 &v2, const float3 &v3){
+__device__ __host__ float3 min3(const float3 &v1, const float3 &v2, const float3 &v3){
 	float3 min = make_float3(v1.x, v1.y, v1.z);
 	if (v2.x < min.x){
 		min.x = v2.x;
@@ -48,7 +41,7 @@ float3 min3(const float3 &v1, const float3 &v2, const float3 &v3){
 
 //this function returns the max XYZ of the 3 vector3 parameters
 //for bounding box creation
-float3 max3(const float3 &v1, const float3 &v2, const float3 &v3) {
+__device__ __host__ float3 max3(const float3 &v1, const float3 &v2, const float3 &v3) {
 	float3 max(v1);
 	if (v2.x > max.x){
 		max.x = v2.x;
@@ -259,7 +252,7 @@ int main()
 	AABB[1] = make_float3(99999999999.9f, 99999999999.9f, 99999999999.9f);
 
 	float3 scale = make_float3(1,1,1);
-	float3 translate = make_float3(5,4,6.75);
+	float3 translate = make_float3(5,0.05,4.75);
 
 	char* filename = "models/teapot.obj";
 	
@@ -268,17 +261,6 @@ int main()
 	int numtris= loadObj_onlyFaces(filename, vertex_list, f_indices, triangle_list, AABB);
 	printf("Succesfully loaded %s for %d triangles. In main().\n", filename, numtris);
 	transformMesh(triangle_list, translate, scale, AABB);
-	
-	//if (numtris == populateTriangles(vertex_list, uv_list, f_indices, uv_indices, triangle_list, min, max, translate, scale, has_uvs=false)){
-	//	std::cout << "Successfully loaded " << filename << " with " << numtris << " triangles\n";
-	//	printf("Bounding box min (%.2f, %.2f, %.2f)\nmax(%.2f, %.2f, %.2f)\n", min.x, min.y, min.z, max.x, max.y, max.z);
-	//}
-	//else{
-	//	std::cout << "Failed loading " << filename << "\n";
-	//}
-
-	//now load the mesh to CUDA memory. Since we use vectors, we pass address of vector[0] as our pointer to triangle_list
-	//loadMeshToMemory(&triangle_list[0], triangle_list.size());
 
 	printf("\nGPUrt initializing. \nRender is for %d samples and resolution %d by %d\n", SAMPLES, XRES, YRES);
 
