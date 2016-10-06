@@ -251,7 +251,7 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	////this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
 	if (USE_TEX_MEM){
 		for (int i = 0; i < num_meshes; i++){
-			intersectAllTriangles
+			intersectAllTriangles(r, t, id, numtris);
 		}
 
 	}
