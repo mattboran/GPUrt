@@ -15,7 +15,7 @@ Triangle *dev_tri_ptr;
 //These two variables are the device pointers to min and max of AABB
 float3 *dev_AABB_ptr;
 //This is the texture memory storage for triangles:
-texture<float3, 1, cudaReadModeNormalizedFloat> tri_tex3;
+texture<float3, 1, cudaReadModeNormalizedFloat> tri_tex3;	//Note, this shows as an error on my Visual Studio 2013 (but still compiles)
 
 
 //These numbers come directly from smallPT
@@ -215,7 +215,23 @@ __device__ float rayTriangleIntersection(const Ray& r, const float3& v0, const f
 
 	return 0.f;
 }
-
+//This function runs intersection tests against the #numtris triangles contained in the texture memory. At some point soon, this
+//function will be able to intersect just a set of triangles described by an offset region of texture memory. I.e. only intersect
+//bytes 400,000 to 400,288 (4 triangles @ 72 bytes a piece)
+__device__ inline void intersectAllTriangles(const Ray &r, float &t, int &id, int numtris){// int start_offset, int stop_offset){
+	float tprime;
+	float inf = 1e15;
+	for (int i = 0; i < numtris; i++){
+		float3 * tri_info = new float3[3];
+		tri_info[0] = tex1Dfetch(tri_tex3, i * 3);
+		tri_info[1] = tex1Dfetch(tri_tex3, i * 3 + 1);
+		tri_info[2] = tex1Dfetch(tri_tex3, i * 3 + 2);
+		if ((tprime = rayTriangleIntersection(r, tri_info[0], tri_info[1], tri_info[2]))>0){
+			t = tprime;
+			id = i;
+		}
+	}
+}
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris, float3 *AABB){
 	float tprime;
@@ -233,9 +249,16 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	int num_meshes = 1;
 
 	////this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
+	if (USE_TEX_MEM){
+		for (int i = 0; i < num_meshes; i++){
+			intersectAllTriangles
+		}
 
-	if (intersectBoundingBox(r, AABB)){
-		intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
+	}
+	else{
+		if (intersectBoundingBox(r, AABB)){
+			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
+		}
 	}
 
 	//if hit occured, t is > 0 and < inf.
