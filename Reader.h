@@ -1,3 +1,6 @@
+
+#ifndef READER_H
+#define READER_H
 #pragma once
 
 #include "cutil_math.h"
@@ -5,16 +8,15 @@
 #include <device_functions.h>
 #include <curand.h>
 #include <curand_kernel.h>
-
-#ifndef READER_H
-#define READER_H
-
+//--Constants-------------------------------
 #define M_PI 3.14159265359f
 #define EPSILON 0.00001f
+//--Render settings-------------------------
 #define XRES 100
 #define YRES 100
-
 #define SAMPLES 512
+//--Debug-----------------------------------
+#define USE_TEX_MEM false
 
 
 //3 types of materials used in the radiance() function. 
@@ -203,38 +205,6 @@ struct loadingTriangle{
 ////--------Texture memory mesh intersection code----------------------------------------
 /////////////////////////////////////////////////////////////////////////////////////////
 
-//This method intersects a ray with a triangle defined by vertex v0, edges edge1 and edge2. 
-//Uses the same Moller-Trumbore intersection code as above
-__device__ float rayTriangleIntersection(const Ray& r,	const float3& v0, const float3& edge1, const float3& edge2){
-	float3 P, Q, T;
-	float det, inv_det, u, v, t;
-
-	//calculate determinant
-	P = cross(r.dir, edge2);
-	det = dot(edge1, P);
-	if (fabs(det) < EPSILON)
-		return 0.0f;
-	inv_det = 1.f / det;
-
-	//distance from V0 to ray origin
-	T = r.origin - v0;
-	//u parameter, test bound
-	u = dot(T, P) * inv_det;
-	if (u < 0.f || u > 1.f)
-		return 0.0f;
-	//v parameter, test bound
-	Q = cross(T, edge1);
-	v = dot(r.dir, Q) * inv_det;
-	if ((v < 0.f) || ((u + v) > 1.f))
-		return 0.0f;
-	t = dot(edge2, Q) * inv_det;
-
-	if (t > EPSILON){//hit
-		return t;
-	}
-
-	return 0.f;
-}
 
 /////////////////////////////////////////////////////////////////////////////////////////
 //------Utility Functions----------------------------------------------------------------

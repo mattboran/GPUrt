@@ -109,8 +109,24 @@ __host__ void loadMeshToMemoryEdgeFormat3(loadingTriangle * tri_list, int number
 		processing_list[i + 2] = v3 - processing_list[i];
 	}
 	cudaMalloc((void**)&dev_tri_ptr, numtris);
-	
+	cudaMemcpy(dev_tri_ptr, &processing_list[0], numtris, cudaMemcpyHostToDevice);
+	delete[] processing_list;
 }
+
+//This function loads triangle data into a CUDA texture. This is a wrapper for binding dev_tri_ptr to tri_tex3
+extern "C"
+{
+	void bindTrianglesToTexture(Triangle* dev_tri_p, unsigned int numberoftris){
+		tri_tex3.normalized = false;
+		tri_tex3.filterMode = cudaFilterModePoint; //do not interpolate data
+		tri_tex3.addressMode[0] = cudaAddressModeWrap; //wrap texture coordinates, basically turning this
+		//texture into 1d array-like structure
+		size_t tex_size = sizeof(float3) * numberoftris * 3;
+		cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float3>();
+		cudaBindTexture(0, tri_tex3, dev_tri_p, &channelDesc, tex_size);
+	}
+}
+
 //this function loads the AABB to dev_min_ptr and dev_max_ptr
 //with the bytes of data at &min and &max. 
 //This cude is CLUSTERFUCKed. Casts on casts on casts 
@@ -165,6 +181,40 @@ __device__ inline void intersectListOfTriangles(const Ray &r, float &t, int &id,
 	}
 }
 
+//__device__ inline void intersectTextureTriangles(const Ray &r, float &t, int &id, int numtris, )
+//This method intersects a ray with a triangle defined by vertex v0, edges edge1 and edge2. 
+//Uses the same Moller-Trumbore intersection code as above
+__device__ float rayTriangleIntersection(const Ray& r, const float3& v0, const float3& edge1, const float3& edge2) {
+	float3 P, Q, T;
+	float det, inv_det, u, v, t;
+
+	//calculate determinant
+	P = cross(r.dir, edge2);
+	det = dot(edge1, P);
+	if (fabs(det) < EPSILON)
+		return 0.0f;
+	inv_det = 1.f / det;
+
+	//distance from V0 to ray origin
+	T = r.origin - v0;
+	//u parameter, test bound
+	u = dot(T, P) * inv_det;
+	if (u < 0.f || u > 1.f)
+		return 0.0f;
+	//v parameter, test bound
+	Q = cross(T, edge1);
+	v = dot(r.dir, Q) * inv_det;
+	if ((v < 0.f) || ((u + v) > 1.f))
+		return 0.0f;
+	t = dot(edge2, Q) * inv_det;
+
+	if (t > EPSILON){//hit
+		return t;
+	}
+
+	return 0.f;
+}
+
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris, float3 *AABB){
 	float tprime;
@@ -179,16 +229,10 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//0 through 8 for ID represent spheres 1 through 9
 	//the next ID's correspond to triangles
 	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max (AABB[0], AABB[1]
-	
-	bool use_AABB = true;
+	int num_meshes = 1;
+
 	////this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
-	if (use_AABB){
-		if (intersectBoundingBox(r, AABB)){
-			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
-		}
-	}
-	
-	else{
+	if (intersectBoundingBox(r, AABB)){
 		intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
 	}
 
@@ -386,12 +430,18 @@ uint hash(uint seed){
 //this wrapper function is used when the cpp main file calls the render kernel
 void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris, float3* AABB){
 	
+	
 	//Load AABB, triangle list, and spheres (from constant memory)
 	loadSpheresToMemory(spheres, numspheres);
 	//loadMeshToMemory(loadingTriangle*, int) loads the triangles to regular device memory. Triangles should be
 	//coalesced as they are each 128 bytes (and a coalesced WORD is 128 bytes)
-	//It is from here that we bind dev_tri_ptr to tri_tex3
-	loadMeshToMemory(tri_list, numtris);
+	if (USE_TEX_MEM){
+		loadMeshToMemoryEdgeFormat3(tri_list, numtris);
+		bindTrianglesToTexture(dev_tri_ptr, numtris);
+	}
+	else{
+		loadMeshToMemory(tri_list, numtris);
+	}
 	loadAABBtoMemory(AABB);
 	
 	//set thread and block settings. These are the settings for the 
