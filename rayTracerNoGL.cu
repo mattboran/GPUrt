@@ -14,6 +14,8 @@ Sphere *dev_sphere_ptr;
 Triangle *dev_tri_ptr;
 //These two variables are the device pointers to min and max of AABB
 float3 *dev_AABB_ptr;
+//This is the texture memory storage for triangles:
+texture<float3, 1, cudaReadModeNormalizedFloat> tri_tex3;
 
 
 //These numbers come directly from smallPT
@@ -58,6 +60,9 @@ __host__ void loadTrisToMemory(Triangle *tri_list, int numberoftris){
 }
 
 //this function loads an entire mesh's worth of triangles to dev_tri_ptr
+//tri_list is the array of triangles (just v0, v1, v2)
+//numberoftris is the numbr of triangle faces
+
 __host__ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 
 	//I really hope this doesn't crash.This was done to avoid having the new Triangle[numberoftris] call because we didn't have a global 
@@ -85,6 +90,43 @@ __host__ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 	cudaMalloc((void**)&dev_tri_ptr, numtris);
 	cudaMemcpy(dev_tri_ptr, &trianglelist[0], numtris, cudaMemcpyHostToDevice);
 	delete[] trianglelist;
+}
+
+//This function loads an entire mesh's worth of memory to dev_tri_ptr
+//However, this method loads the triangles in the following format: vertex0, edge1 (v1-v0), edge2(v2-v0)
+//This is used prior to invoking the bindTexture function. This is the float3 version, where each triangle takes up 3 * 24 = 72 bytes.
+//This is not coalesced, but it is cached in a specific way
+__host__ void loadMeshToMemoryEdgeFormat3(loadingTriangle * tri_list, int numberoftris){
+	//numtris is the number of bytes that dev_tri_ptr will contain
+	size_t numtris = numberoftris * sizeof(float3) * 3;
+	float3 *processing_list = new float3[numberoftris * 3];
+	float3 v2, v3;
+	//first, produce the processing_list with the triangle data in format v0, e1, e2. For small numbers of triangles (<100k) should be 
+	//reasonably fast.
+	for (int i = 0; i < numberoftris; i++){
+		processing_list[i] = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
+		v2 = tri_list[i].v2;
+		v3 = tri_list[i].v3;
+		processing_list[i + 1] = v2 - processing_list[i];
+		processing_list[i + 2] = v3 - processing_list[i];
+	}
+	cudaMalloc((void**)&dev_tri_ptr, numtris);
+	cudaMemcpy(dev_tri_ptr, &processing_list[0], numtris, cudaMemcpyHostToDevice);
+	delete[] processing_list;
+}
+
+//This function loads triangle data into a CUDA texture. This is a wrapper for binding dev_tri_ptr to tri_tex3
+extern "C"
+{
+	void bindTrianglesToTexture(Triangle* dev_tri_p, unsigned int numberoftris){
+		tri_tex3.normalized = false;
+		tri_tex3.filterMode = cudaFilterModePoint; //do not interpolate data
+		tri_tex3.addressMode[0] = cudaAddressModeWrap; //wrap texture coordinates, basically turning this
+		//texture into 1d array-like structure
+		size_t tex_size = sizeof(float3) * numberoftris * 3;
+		cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float3>();
+		cudaBindTexture(0, tri_tex3, dev_tri_p, &channelDesc, tex_size);
+	}
 }
 
 //this function loads the AABB to dev_min_ptr and dev_max_ptr
@@ -140,6 +182,40 @@ __device__ inline void intersectListOfTriangles(const Ray &r, float &t, int &id,
 	}
 }
 
+//__device__ inline void intersectTextureTriangles(const Ray &r, float &t, int &id, int numtris, )
+//This method intersects a ray with a triangle defined by vertex v0, edges edge1 and edge2. 
+//Uses the same Moller-Trumbore intersection code as above
+__device__ float rayTriangleIntersection(const Ray& r, const float3& v0, const float3& edge1, const float3& edge2) {
+	float3 P, Q, T;
+	float det, inv_det, u, v, t;
+
+	//calculate determinant
+	P = cross(r.dir, edge2);
+	det = dot(edge1, P);
+	if (fabs(det) < EPSILON)
+		return 0.0f;
+	inv_det = 1.f / det;
+
+	//distance from V0 to ray origin
+	T = r.origin - v0;
+	//u parameter, test bound
+	u = dot(T, P) * inv_det;
+	if (u < 0.f || u > 1.f)
+		return 0.0f;
+	//v parameter, test bound
+	Q = cross(T, edge1);
+	v = dot(r.dir, Q) * inv_det;
+	if ((v < 0.f) || ((u + v) > 1.f))
+		return 0.0f;
+	t = dot(edge2, Q) * inv_det;
+
+	if (t > EPSILON){//hit
+		return t;
+	}
+
+	return 0.f;
+}
+
 //World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris, float3 *AABB){
 	float tprime;
@@ -154,16 +230,11 @@ __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *s
 	//0 through 8 for ID represent spheres 1 through 9
 	//the next ID's correspond to triangles
 	//before testing all the triangles in the mesh, first test intersection with the bounding box defined by min and max (AABB[0], AABB[1]
-	
-	bool use_AABB = true;
+	int num_meshes = 1;
+
 	////this section of code calls inline functions that do the intersecting. This should makei  easier to add other *intersection modules* including using texture memory and 
-	if (use_AABB){
-		if (intersectBoundingBox(r, AABB)){
-			intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
-		}
-	}
-	
-	else{
+
+	if (intersectBoundingBox(r, AABB)){
 		intersectListOfTriangles(r, t, id, tri_list, numtris, numspheres);
 	}
 
@@ -345,7 +416,17 @@ __global__ void render_kernel(float3 *out, uint hashedSampleNumber, Sphere *sphe
 	out[i] = make_float3(clamp(col.x*cor, 0.f, 1.f), clamp(col.y*cor, 0.f, 1.f), clamp(col.z*cor, 0.f, 1.f));
 }
 
-
+//hashing function to get seed for curandDevice
+//this fast hash method was developed by Thomas Wang
+//this is used to re-seed curand every sample
+uint hash(uint seed){
+	seed = (seed ^ 61) ^ (seed >> 16);
+	seed *= 9;
+	seed = seed ^ (seed >> 4);
+	seed *= 0x27d4eb2d;
+	seed = seed ^ (seed >> 15);
+	return seed;
+}
 //hashing function to get seed for curandDevice
 //this fast hash method was developed by Thomas Wang
 //this is used to re-seed curand every sample
@@ -360,16 +441,28 @@ uint hash(uint seed){
 
 //this wrapper function is used when the cpp main file calls the render kernel
 void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris, float3* AABB){
-	float3* out_dvc;
-
-	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
-
+	
+	
+	//Load AABB, triangle list, and spheres (from constant memory)
 	loadSpheresToMemory(spheres, numspheres);
-	loadMeshToMemory(tri_list, numtris);
+	//loadMeshToMemory(loadingTriangle*, int) loads the triangles to regular device memory. Triangles should be
+	//coalesced as they are each 128 bytes (and a coalesced WORD is 128 bytes)
+	if (USE_TEX_MEM){
+		loadMeshToMemoryEdgeFormat3(tri_list, numtris);
+		bindTrianglesToTexture(dev_tri_ptr, numtris);
+	}
+	else{
+		loadMeshToMemory(tri_list, numtris);
+	}
 	loadAABBtoMemory(AABB);
 	
+	//set thread and block settings. These are the settings for the 
+	//distributed 'warps' 
 	dim3 block(16, 16, 1);
 	dim3 grid(XRES / block.x, YRES / block.y, 1);
+
+	float3* out_dvc;
+	cudaMalloc(&out_dvc, XRES * YRES * sizeof(float3));
 
 	printf("\nLaunchng render_kernel for %d samples\n", SAMPLES);
 	render_kernel << <grid, block >> > (out_dvc, hash(124), dev_sphere_ptr, dev_tri_ptr, numtris, dev_AABB_ptr);

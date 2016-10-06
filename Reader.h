@@ -1,3 +1,6 @@
+
+#ifndef READER_H
+#define READER_H
 #pragma once
 
 #include "cutil_math.h"
@@ -5,17 +8,15 @@
 #include <device_functions.h>
 #include <curand.h>
 #include <curand_kernel.h>
-
-#ifndef READER_H
-#define READER_H
-
+//--Constants-------------------------------
 #define M_PI 3.14159265359f
 #define EPSILON 0.00001f
+//--Render settings-------------------------
 #define XRES 100
 #define YRES 100
-
 #define SAMPLES 512
-
+//--Debug-----------------------------------
+#define USE_TEX_MEM false
 
 //3 types of materials used in the radiance() function. 
 enum Refl_t { DIFF, SPEC, REFR };
@@ -199,27 +200,31 @@ struct loadingTriangle{
 	}
 };
 
-//This function returns the largest value of x y and z from a float3
-__device__ __host__ inline float getMax(float3 f){
-	if (f.x > f.y)
-		return fmax(f.x, f.z);
-	if (f.y > f.x)
-		return fmax(f.y, f.z);
-	if (f.z > f.x)
-		return fmax(f.z, f.x);
-	else return f.x;
-}
 
+/////////////////////////////////////////////////////////////////////////////////////////
+////--------Texture memory mesh intersection code----------------------------------------
+/////////////////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////////
+//------Utility Functions----------------------------------------------------------------
+/////////////////////////////////////////////////////////////////////////////////////////
+//--Below this are some functions that are used throughout the program. Some of them are 
+//inline, some of them are not. Most of them are short. There are more functions that---
+//could be classified as utility, that belong here.-------------------------------------
+/////////////////////////////////////////////////////////////////////////////////////////
 
 //clamp a float on [0, 1]
 inline float clampf(float x){
 	return x < 0.f ? 0.f : x > 1.f ? 1.f : x;
 }
+
 //this function converts a float on [0.f, 1.f] to int on [0, 255], gamma-corrected by sqrt 2.2 (standard)
 
 inline int toInt(float x){
 	return int(powf(clampf(x), 1 / 2.2) * 255 + .5);
 }
+
 //This funciton returns the greater of 2 floats
 
 __device__ inline float max_float(float a, float b){
