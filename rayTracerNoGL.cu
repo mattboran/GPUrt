@@ -12,10 +12,12 @@ uint hash(uint seed);
 //These are the device sphere and triangle pointers. 
 Sphere *dev_sphere_ptr;
 Triangle *dev_tri_ptr;
+float* dev_tri_ptr_tex;
 //These two variables are the device pointers to min and max of AABB
 float3 *dev_AABB_ptr;
 //This is the texture memory storage for triangles:
-texture<float3, 1, cudaReadModeNormalizedFloat> tri_tex3;	//Note, this shows as an error on my Visual Studio 2013 (but still compiles)
+//We will have to use float4's because float3's can't be stored in texture memory due to coalescing problems
+texture<float4, 1, cudaReadModeNormalizedFloat> tri_tex;	//Note, this shows as an error on my Visual Studio 2013 (but still compiles)
 
 
 //These numbers come directly from smallPT
@@ -46,7 +48,7 @@ Sphere spheres[] = {
 //this function loads the spheres defined above into DRAM
 __host__ void loadSpheresToMemory(Sphere *sph_list, int numberofspheres){
 	size_t numspheres = numberofspheres * sizeof(Sphere);
-	printf("\mLoading %d bytes for %d spheres,\n", numspheres, numberofspheres);
+	printf("\nLoading %d bytes for %d spheres,\n", numspheres, numberofspheres);
 	cudaMalloc((void **)&dev_sphere_ptr, numspheres);//void** cast is so cudaMalloc will accept the address of sphere pointer as parameter
 	cudaMemcpy(dev_sphere_ptr, &sph_list[0], numspheres, cudaMemcpyHostToDevice);
 }
@@ -98,34 +100,34 @@ __host__ void loadMeshToMemory(loadingTriangle *tri_list, int numberoftris){
 //This is not coalesced, but it is cached in a specific way
 __host__ void loadMeshToMemoryEdgeFormat3(loadingTriangle * tri_list, int numberoftris){
 	//numtris is the number of bytes that dev_tri_ptr will contain
-	size_t numtris = numberoftris * sizeof(float3) * 3;
-	float3 *processing_list = new float3[numberoftris * 3];
-	float3 v2, v3;
+	size_t numtris = numberoftris * sizeof(float4) * 3;
+	float4 *processing_list = new float4[numberoftris * 3];
+	float4 v2, v3;
 	//first, produce the processing_list with the triangle data in format v0, e1, e2. For small numbers of triangles (<100k) should be 
 	//reasonably fast.
 	for (int i = 0; i < numberoftris; i++){
-		processing_list[i] = make_float3(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z);
-		v2 = tri_list[i].v2;
-		v3 = tri_list[i].v3;
+		processing_list[i] = make_float4(tri_list[i].v1.x, tri_list[i].v1.y, tri_list[i].v1.z, 0.f);
+		v2 = make_float4(tri_list[i].v2.x, tri_list[i].v2.y, tri_list[i].v2.z, 0.f);
+		v3 = make_float4(tri_list[i].v3.x, tri_list[i].v3.y, tri_list[i].v3.z, 0.f);
 		processing_list[i + 1] = v2 - processing_list[i];
 		processing_list[i + 2] = v3 - processing_list[i];
 	}
-	cudaMalloc((void**)&dev_tri_ptr, numtris);
-	cudaMemcpy(dev_tri_ptr, &processing_list[0], numtris, cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&dev_tri_ptr_tex, numtris);
+	cudaMemcpy(dev_tri_ptr_tex, &processing_list[0], numtris, cudaMemcpyHostToDevice);
 	delete[] processing_list;
 }
 
-//This function loads triangle data into a CUDA texture. This is a wrapper for binding dev_tri_ptr to tri_tex3
+//This function loads triangle data into a CUDA texture. This is a wrapper for binding dev_tri_ptr to tri_tex
 extern "C"
 {
-	void bindTrianglesToTexture(Triangle* dev_tri_p, unsigned int numberoftris){
-		tri_tex3.normalized = false;
-		tri_tex3.filterMode = cudaFilterModePoint; //do not interpolate data
-		tri_tex3.addressMode[0] = cudaAddressModeWrap; //wrap texture coordinates, basically turning this
+	void bindTrianglesToTexture(float* dev_tri_p, unsigned int numberoftris){
+		tri_tex.normalized = false;
+		tri_tex.filterMode = cudaFilterModePoint; //do not interpolate data
+		tri_tex.addressMode[0] = cudaAddressModeWrap; //wrap texture coordinates, basically turning this
 		//texture into 1d array-like structure
-		size_t tex_size = sizeof(float3) * numberoftris * 3;
-		cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float3>();
-		cudaBindTexture(0, tri_tex3, dev_tri_p, &channelDesc, tex_size);
+		size_t tex_size = sizeof(float4) * numberoftris * 3;
+		const cudaChannelFormatDesc *channelDesc = &cudaCreateChannelDesc<float4>();
+		cudaBindTexture(0, tri_tex, dev_tri_p, channelDesc, tex_size);
 	}
 }
 
@@ -220,19 +222,23 @@ __device__ float rayTriangleIntersection(const Ray& r, const float3& v0, const f
 //bytes 400,000 to 400,288 (4 triangles @ 72 bytes a piece)
 __device__ inline void intersectAllTriangles(const Ray &r, float &t, int &id, int numtris){// int start_offset, int stop_offset){
 	float tprime;
-	float inf = 1e15;
+	float4 * tri_info = new float4[3];
 	for (int i = 0; i < numtris; i++){
-		float3 * tri_info = new float3[3];
-		tri_info[0] = tex1Dfetch(tri_tex3, i * 3);
-		tri_info[1] = tex1Dfetch(tri_tex3, i * 3 + 1);
-		tri_info[2] = tex1Dfetch(tri_tex3, i * 3 + 2);
-		if ((tprime = rayTriangleIntersection(r, tri_info[0], tri_info[1], tri_info[2]))>0){
+		tri_info[0] = tex1Dfetch<float4>(tri_tex, i * 3);
+		tri_info[1] = tex1Dfetch<float4>(tri_tex, i * 3 + 1);
+		tri_info[2] = tex1Dfetch<float4>(tri_tex, i * 3 + 2);
+		float3 v0 = make_float3(tri_info[0].w, tri_info[0].x, tri_info[0].y);
+		float3 e1 = make_float3(tri_info[1].w, tri_info[1].y, tri_info[1].y);
+		float3 e2 = make_float3(tri_info[2].w, tri_info[2].y, tri_info[2].y);
+		
+		if ((tprime = rayTriangleIntersection(r, v0, e1, e2))>0){
 			t = tprime;
 			id = i;
 		}
 	}
+	delete[] tri_info;
 }
-//World description: 9 spheres that form a modified Cornell box. this can be kept in const GPU memory (for now)
+
 __device__ inline bool intersectScene(const Ray &r, float &t, int &id, Sphere *sphere_list, int numspheres, Triangle *tri_list, int numtris, float3 *AABB){
 	float tprime;
 	float inf = 1e15f;
@@ -450,17 +456,6 @@ uint hash(uint seed){
 	seed = seed ^ (seed >> 15);
 	return seed;
 }
-//hashing function to get seed for curandDevice
-//this fast hash method was developed by Thomas Wang
-//this is used to re-seed curand every sample
-uint hash(uint seed){
-	seed = (seed ^ 61) ^ (seed >> 16);
-	seed *= 9;
-	seed = seed ^ (seed >> 4);
-	seed *= 0x27d4eb2d;
-	seed = seed ^ (seed >> 15);
-	return seed;
-}
 
 //this wrapper function is used when the cpp main file calls the render kernel
 void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_list, int numtris, float3* AABB){
@@ -472,7 +467,7 @@ void renderKernelWrapper(float3* out_host, int numspheres, loadingTriangle* tri_
 	//coalesced as they are each 128 bytes (and a coalesced WORD is 128 bytes)
 	if (USE_TEX_MEM){
 		loadMeshToMemoryEdgeFormat3(tri_list, numtris);
-		bindTrianglesToTexture(dev_tri_ptr, numtris);
+		bindTrianglesToTexture(dev_tri_ptr_tex, numtris);
 	}
 	else{
 		loadMeshToMemory(tri_list, numtris);
