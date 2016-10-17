@@ -8,6 +8,10 @@
 #include <device_functions.h>
 #include <curand.h>
 #include <curand_kernel.h>
+#include "texture_types.h"
+#include "cuda_texture_types.h"
+#include "texture_fetch_functions.h"
+#include "texture_indirect_functions.h"
 //--Constants-------------------------------
 #define M_PI 3.14159265359f
 #define EPSILON 0.00001f

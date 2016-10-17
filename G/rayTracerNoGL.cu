@@ -1,4 +1,4 @@
-
+#include <cuda_runtime.h>
 #include <iostream>
 #include "Reader.h"
 #include "cutil_math.h"
@@ -17,8 +17,7 @@ float* dev_tri_ptr_tex;
 float3 *dev_AABB_ptr;
 //This is the texture memory storage for triangles:
 //We will have to use float4's because float3's can't be stored in texture memory due to coalescing problems
-texture<float4, 1, cudaReadModeNormalizedFloat> tri_tex;	//Note, this shows as an error on my Visual Studio 2013 (but still compiles)
-
+texture<float4, cudaTextureType1D, cudaReadModeElementType> tri_tex;	//Note, this shows as an error on my Visual Studio 2013 (but still compiles)
 
 //These numbers come directly from smallPT
 //had to scale everything down by a factor of 10 to reduce artifacts.
@@ -126,8 +125,9 @@ extern "C"
 		tri_tex.addressMode[0] = cudaAddressModeWrap; //wrap texture coordinates, basically turning this
 		//texture into 1d array-like structure
 		size_t tex_size = sizeof(float4) * numberoftris * 3;
-		cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float4>();
-		cudaBindTexture(0, tri_tex, dev_tri_p, channelDesc, tex_size);
+		cudaChannelFormatDesc channelDesc = 
+			cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
+		cudaBindTexture(NULL, tri_tex, dev_tri_p, tri_tex.channelDesc, tex_size);
 	}
 }
 
@@ -231,7 +231,7 @@ __device__ inline void intersectAllTriangles(const Ray &r, float &t, int &id, in
 		float3 e1 = make_float3(tri_info[1].w, tri_info[1].y, tri_info[1].y);
 		float3 e2 = make_float3(tri_info[2].w, tri_info[2].y, tri_info[2].y);
 		
-		if ((tprime = rayTriangleIntersection(r, v0, e1, e2))>0){
+		if ((tprime = rayTriangleIntersection(r, v0, e1, e2)) > 0){
 			t = tprime;
 			id = i;
 		}
